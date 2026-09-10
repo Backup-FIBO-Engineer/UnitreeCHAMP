@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Physics checks for mujoco/xgo.xml against CHAMP standing pose and URDF FK.
+"""Physics checks for mujoco/{xgo,go2,b2}.xml against CHAMP standing pose and URDF FK.
 
 Requires the `mujoco` Python package. Does not need ROS.
 """
@@ -68,7 +68,31 @@ GO2 = {
     ], dtype=np.float64),
 }
 
-ROBOTS = {'xgo': XGO, 'go2': GO2}
+# Standing pose/feet from `dump_unitree_gait b2 0 0 0 0` (config/b2_gait.yaml,
+# nominal_height 0.50). The tiny hip angles come from the URDF calf y offsets.
+B2 = {
+    'joint_names': GO2['joint_names'],
+    'foot_sites': GO2['foot_sites'],
+    'foot_geoms': GO2['foot_geoms'],
+    'base_body': 'base_link',
+    'imu_body': 'imu_link',
+    'nominal_height': 0.50,
+    'imu_offset': np.array([0.0, -0.02341, 0.04927]),
+    'stand_joints': np.array([
+        0.000173972046, 0.775150955, -1.55030179,
+        -0.000173940265, 0.775150955, -1.55030179,
+        0.000173972046, 0.775150955, -1.55030179,
+        -1.39090677e-08, 0.775193393, -1.55038667,
+    ], dtype=np.float64),
+    'stand_feet': np.array([
+        [0.3284999728, 0.1917300075, -0.5],
+        [0.3284999728, -0.1917299926, -0.5],
+        [-0.3285000324, 0.1917300075, -0.5],
+        [-0.3285000324, -0.1917300075, -0.5],
+    ], dtype=np.float64),
+}
+
+ROBOTS = {'xgo': XGO, 'go2': GO2, 'b2': B2}
 
 
 def result(label: str, ok: bool, detail: str = '') -> int:
@@ -102,7 +126,8 @@ def main() -> int:
     args = parser.parse_args()
     robot_name = args.robot
     if robot_name is None:
-        robot_name = 'go2' if 'go2' in args.xml_path.stem.lower() else 'xgo'
+        stem = args.xml_path.stem.lower()
+        robot_name = next((name for name in ('go2', 'b2') if name in stem), 'xgo')
     cfg = ROBOTS[robot_name]
     joint_names = cfg['joint_names']
     foot_sites = cfg['foot_sites']
@@ -173,7 +198,7 @@ def main() -> int:
                     flags[index] = True
         return flags
 
-    hold_steps = 4000 if robot_name == 'go2' else 2500
+    hold_steps = 4000 if robot_name in ('go2', 'b2') else 2500
     for _ in range(hold_steps):
         data.ctrl[act_id] = cfg['stand_joints']
         mujoco.mj_step(model, data)
@@ -182,7 +207,7 @@ def main() -> int:
     quat = data.qpos[3:7].copy()
     tilt = 2.0 * math.acos(max(-1.0, min(1.0, float(quat[0]))))
     stood = contacts()
-    settle_tol = 0.03 if robot_name == 'go2' else 0.02
+    settle_tol = 0.03 if robot_name in ('go2', 'b2') else 0.02
     failures += result(
         f'held stance settles near {cfg["nominal_height"]:.2f} m + foot radius',
         abs(base_z - expected_settle_z) < settle_tol,

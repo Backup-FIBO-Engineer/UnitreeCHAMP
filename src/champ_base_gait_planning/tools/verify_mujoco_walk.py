@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Replay a CHAMP Go2 gait dump in MuJoCo and report achieved body velocity."""
+"""Replay a CHAMP Go2/B2 gait dump in MuJoCo and report achieved body velocity.
+
+    verify_mujoco_walk.py [--robot go2|b2] [vx | sweep]
+"""
 from __future__ import annotations
 
+import argparse
 import subprocess
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -11,8 +14,8 @@ import mujoco
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-XML = ROOT / 'mujoco' / 'go2.xml'
-DUMP_SRC = ROOT / 'tools' / 'dump_go2_gait.cpp'
+DUMP_SRC = ROOT / 'tools' / 'dump_unitree_gait.cpp'
+DUMP_BIN = Path('/tmp/dump_unitree_gait')
 CHAMP_INC = ROOT.parent / 'champ' / 'include' / 'champ'
 JOINTS = [
     'FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint',
@@ -20,22 +23,28 @@ JOINTS = [
     'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint',
     'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint',
 ]
-DUMP_BIN = Path('/tmp/dump_go2_gait')
+
+# swing/stance defaults mirror config/<robot>_gait.yaml.
+ROBOTS = {
+    'go2': {'xml': ROOT / 'mujoco' / 'go2.xml', 'swing': 0.08, 'stance': 0.25, 'default_vx': 0.35},
+    'b2': {'xml': ROOT / 'mujoco' / 'b2.xml', 'swing': 0.10, 'stance': 0.30, 'default_vx': 0.35},
+}
 
 
-def load_traj(vx: float, ticks: int, swing: float = 0.08, stance: float = 0.25) -> np.ndarray:
+def load_traj(robot: str, vx: float, ticks: int, swing: float, stance: float) -> np.ndarray:
     if not DUMP_BIN.exists() or DUMP_SRC.stat().st_mtime > DUMP_BIN.stat().st_mtime:
         subprocess.check_call(
             ['g++', '-std=c++17', '-O2', f'-I{CHAMP_INC}', '-o', str(DUMP_BIN), str(DUMP_SRC)]
         )
     out = subprocess.check_output(
-        [str(DUMP_BIN), str(vx), '0', '0', str(ticks), str(swing), str(stance)], text=True
+        [str(DUMP_BIN), robot, str(vx), '0', '0', str(ticks), str(swing), str(stance)], text=True
     )
     rows = [list(map(float, line.split())) for line in out.strip().splitlines() if line]
     return np.asarray(rows, dtype=np.float64)
 
 
 def run(
+    robot: str,
     vx_cmd: float,
     ticks: int,
     swing: float,
@@ -44,8 +53,8 @@ def run(
     friction: Optional[float],
     kv: Optional[float] = None,
 ) -> float:
-    traj = load_traj(vx_cmd, ticks, swing, stance)
-    model = mujoco.MjModel.from_xml_path(str(XML))
+    traj = load_traj(robot, vx_cmd, ticks, swing, stance)
+    model = mujoco.MjModel.from_xml_path(str(ROBOTS[robot]['xml']))
     data = mujoco.MjData(model)
     jids = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n) for n in JOINTS])
     qadr = model.jnt_qposadr[jids]
@@ -96,33 +105,52 @@ def run(
     dist = float(xs[-1] - xs[skip])
     duration = (len(vxs) - skip) * 0.005
     print(
-        f'vx={vx_cmd:.2f} swing={swing:.2f} stance={stance:.2f} kp={kp} kv={kv} mu={friction} '
+        f'{robot} vx={vx_cmd:.2f} swing={swing:.2f} stance={stance:.2f} kp={kp} kv={kv} mu={friction} '
         f'mean_vx={mean_vx:.3f} ({100 * mean_vx / max(vx_cmd, 1e-6):.0f}%) '
         f'dx={dist:.3f}/{duration:.2f}s tilt={np.max(tilts):.1f}deg sat={sat}'
     )
     return mean_vx
 
 
+SWEEPS = {
+    'go2': [
+        (0.25, 0.05, 0.25, None, None, None),
+        (0.35, 0.05, 0.25, None, None, None),
+        (0.25, 0.08, 0.25, None, None, None),
+        (0.25, 0.05, 0.25, 200.0, 1.5, 8.0),
+        (0.25, 0.08, 0.25, 200.0, 1.5, 8.0),
+        (0.35, 0.08, 0.25, 160.0, 1.2, 6.0),
+        (0.50, 0.08, 0.25, 160.0, 1.2, 6.0),
+        (0.25, 0.08, 0.20, 160.0, 1.2, 6.0),
+        (0.25, 0.06, 0.30, 160.0, 1.2, 6.0),
+        (0.50, 0.08, 0.25, 120.0, 1.5, 5.0),
+    ],
+    'b2': [
+        (0.25, 0.10, 0.30, None, None, None),
+        (0.35, 0.10, 0.30, None, None, None),
+        (0.60, 0.10, 0.30, None, None, None),
+        (0.35, 0.08, 0.30, None, None, None),
+        (0.35, 0.10, 0.25, None, None, None),
+        (0.35, 0.10, 0.30, 1500.0, 1.2, 30.0),
+        (0.35, 0.10, 0.30, 700.0, 1.2, 15.0),
+        (0.60, 0.10, 0.30, 1500.0, 1.2, 30.0),
+    ],
+}
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--robot', choices=sorted(ROBOTS), default='go2')
+    parser.add_argument('vx', nargs='?', default=None, help='commanded vx in m/s, or "sweep"')
+    args = parser.parse_args()
+    cfg = ROBOTS[args.robot]
     ticks = 800
-    if len(sys.argv) > 1 and sys.argv[1] == 'sweep':
-        for spec in [
-            (0.25, 0.05, 0.25, None, None, None),
-            (0.35, 0.05, 0.25, None, None, None),
-            (0.25, 0.08, 0.25, None, None, None),
-            (0.25, 0.05, 0.25, 200.0, 1.5, 8.0),
-            (0.25, 0.08, 0.25, 200.0, 1.5, 8.0),
-            (0.35, 0.08, 0.25, 160.0, 1.2, 6.0),
-            (0.50, 0.08, 0.25, 160.0, 1.2, 6.0),
-            (0.25, 0.08, 0.20, 160.0, 1.2, 6.0),
-            (0.25, 0.06, 0.30, 160.0, 1.2, 6.0),
-            (0.50, 0.08, 0.25, 120.0, 1.5, 5.0),
-        ]:
-            vx, swing, stance, kp, mu, kv = spec
-            run(vx, ticks, swing, stance, kp, mu, kv)
+    if args.vx == 'sweep':
+        for vx, swing, stance, kp, mu, kv in SWEEPS[args.robot]:
+            run(args.robot, vx, ticks, swing, stance, kp, mu, kv)
         return 0
-    vx_cmd = float(sys.argv[1]) if len(sys.argv) > 1 else 0.35
-    mean_vx = run(vx_cmd, ticks, 0.08, 0.25, None, None)
+    vx_cmd = float(args.vx) if args.vx is not None else cfg['default_vx']
+    mean_vx = run(args.robot, vx_cmd, ticks, cfg['swing'], cfg['stance'], None, None)
     ok = mean_vx > 0.55 * vx_cmd
     print('PASS' if ok else 'FAIL')
     return 0 if ok else 1
