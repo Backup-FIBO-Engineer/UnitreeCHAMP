@@ -91,6 +91,31 @@ int main()
   }
   check(unique_contacts, "foot_force map covers LF RF LH RH once");
 
+  // Joint limits (urdf/go2.urdf): hip +-1.0472, front thigh [-1.5708, 3.4907],
+  // rear thigh [-0.5236, 4.5379], calf [-2.7227, -0.83776].
+  bool limits_ordered = true;
+  for (int i = 0; i < kGo2MotorCount; ++i) {
+    limits_ordered = limits_ordered && (kGo2JointLower[i] < kGo2JointUpper[i]);
+  }
+  check(limits_ordered, "joint limit arrays have lower < upper");
+  check(go2ClampJoint(0, 0.5f) == 0.5f, "inside range is unchanged");
+  check(go2ClampJoint(0, 2.0f) == 1.0472f, "FR hip clamps to +1.0472");
+  check(go2ClampJoint(3, -2.0f) == -1.0472f, "FL hip clamps to -1.0472");
+  check(go2ClampJoint(1, -1.7f) == -1.5708f, "FR thigh clamps to front lower -1.5708");
+  check(go2ClampJoint(7, -1.7f) == -0.5236f, "RR thigh clamps to rear lower -0.5236");
+  check(go2ClampJoint(10, 5.0f) == 4.5379f, "RL thigh clamps to rear upper 4.5379");
+  check(go2ClampJoint(2, 0.0f) == -0.83776f, "FR calf 0 rad (leg fully stretched) clamps to -0.83776");
+  check(go2ClampJoint(11, -3.0f) == -2.7227f, "RL calf clamps to -2.7227");
+  // CHAMP standing pose at nominal_height 0.30 must pass through untouched.
+  const float stand[3] = {0.0f, 0.789464891f, -1.57892966f};
+  bool stand_ok = true;
+  for (int leg = 0; leg < 4; ++leg) {
+    for (int j = 0; j < 3; ++j) {
+      stand_ok = stand_ok && (go2ClampJoint(leg * 3 + j, stand[j]) == stand[j]);
+    }
+  }
+  check(stand_ok, "CHAMP standing pose is inside Go2 limits for all 12 motors");
+
   uint32_t word = 0;
   const uint32_t crc_zero = crc32_core(&word, 1);
   check(crc_zero != 0u, "CRC of a zero word is not 0");

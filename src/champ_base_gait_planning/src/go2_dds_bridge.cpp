@@ -270,6 +270,7 @@ private:
     const float blend = static_cast<float>(std::min(1.0, std::max(0.0, ramp_t)));
     const float kp = kp_;
     const float kd = command_stale ? std::max(kd_, 2.0f) : kd_;
+    int clamped = 0;
     for (int i = 0; i < kGo2MotorCount; ++i) {
       const float q_meas = static_cast<float>(measured[static_cast<size_t>(i)]);
       float q_des = q_meas;
@@ -278,12 +279,22 @@ private:
         const float q_start = static_cast<float>(start_q[static_cast<size_t>(i)]);
         q_des = (1.0f - blend) * q_start + blend * q_cmd;
       }
+      const float q_safe = go2ClampJoint(i, q_des);
+      if (q_safe != q_des) {
+        ++clamped;
+        q_des = q_safe;
+      }
       low_cmd_.motor_cmd()[i].mode() = motor_mode_;
       low_cmd_.motor_cmd()[i].q() = q_des;
       low_cmd_.motor_cmd()[i].dq() = 0.0f;
       low_cmd_.motor_cmd()[i].kp() = kp;
       low_cmd_.motor_cmd()[i].kd() = kd;
       low_cmd_.motor_cmd()[i].tau() = tau_;
+    }
+    if (clamped > 0) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "%d joint target(s) outside Go2 URDF limits were clamped before rt/lowcmd", clamped);
     }
     low_cmd_.crc() = crc32_core(
       reinterpret_cast<uint32_t *>(&low_cmd_), (sizeof(LowCmd) >> 2) - 1);
