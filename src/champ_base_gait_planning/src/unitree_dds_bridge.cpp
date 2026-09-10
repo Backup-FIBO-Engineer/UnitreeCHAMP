@@ -1,4 +1,4 @@
-#include "go2_lowcmd_map.h"
+#include "unitree_lowcmd_map.h"
 #include "motor_crc.h"
 
 #include <champ_msgs/msg/contacts_stamped.hpp>
@@ -7,6 +7,8 @@
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <builtin_interfaces/msg/time.hpp>
 
+// Go2 and B2 both publish/consume the unitree_go LowCmd_/LowState_ IDL
+// (see unitree_sdk2 example/b2/b2_stand_example.cpp).
 #include <unitree/idl/go2/LowCmd_.hpp>
 #include <unitree/idl/go2/LowState_.hpp>
 #include <unitree/robot/b2/motion_switcher/motion_switcher_client.hpp>
@@ -19,6 +21,7 @@
 #include <cmath>
 #include <functional>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 
@@ -28,12 +31,13 @@ using LowCmd = unitree_go::msg::dds_::LowCmd_;
 using LowState = unitree_go::msg::dds_::LowState_;
 }
 
-class Go2DdsBridge : public rclcpp::Node
+class UnitreeDdsBridge : public rclcpp::Node
 {
 public:
-  Go2DdsBridge()
-  : Node("go2_dds_bridge")
+  UnitreeDdsBridge()
+  : Node("unitree_dds_bridge")
   {
+    declare_parameter("robot", std::string(""));
     declare_parameter("command_topic", std::string("joint_commands"));
     declare_parameter("joint_state_topic", std::string("joint_states"));
     declare_parameter("contact_topic", std::string("foot_contacts"));
@@ -43,16 +47,33 @@ public:
     declare_parameter("kp", 40.0);
     declare_parameter("kd", 1.0);
     declare_parameter("tau", 0.0);
-    declare_parameter("motor_mode", 0x01);
+    // -1 selects the official stand-example mode for the robot (Go2 0x01, B2 0x0A).
+    declare_parameter("motor_mode", -1);
     declare_parameter("command_timeout_sec", 0.5);
     declare_parameter("ramp_sec", 2.0);
     declare_parameter("contact_force_threshold", 20.0);
     declare_parameter("release_sport", true);
+    // Empty selects the URDF root link (Go2 "base", B2 "base_link").
+    declare_parameter("base_frame", std::string(""));
+
+    const auto robot_name = get_parameter("robot").as_string();
+    if (!unitreeRobotFromName(robot_name, robot_)) {
+      throw std::invalid_argument(
+              "unitree_dds_bridge parameter 'robot' must be 'go2' or 'b2' (got '" +
+              robot_name + "'). Load config/go2_lowcmd.yaml or config/b2_lowcmd.yaml.");
+    }
+    limits_ = &unitreeJointLimits(robot_);
+    base_frame_ = get_parameter("base_frame").as_string();
+    if (base_frame_.empty()) {
+      base_frame_ = unitreeBaseLink(robot_);
+    }
 
     kp_ = static_cast<float>(get_parameter("kp").as_double());
     kd_ = static_cast<float>(get_parameter("kd").as_double());
     tau_ = static_cast<float>(get_parameter("tau").as_double());
-    motor_mode_ = static_cast<uint8_t>(get_parameter("motor_mode").as_int());
+    const int64_t motor_mode = get_parameter("motor_mode").as_int();
+    motor_mode_ = motor_mode < 0 ?
+      unitreeDefaultMotorMode(robot_) : static_cast<uint8_t>(motor_mode);
     command_timeout_sec_ = get_parameter("command_timeout_sec").as_double();
     ramp_sec_ = std::max(0.0, get_parameter("ramp_sec").as_double());
     contact_force_threshold_ = get_parameter("contact_force_threshold").as_double();
@@ -63,7 +84,8 @@ public:
       RCLCPP_WARN(
         get_logger(),
         "unitree_sdk2 DDS domain 0 on the default interface. "
-        "Pass network_interface:=eth0 (or the NIC cabled to the Go2).");
+        "Pass network_interface:=eth0 (or the NIC cabled to the %s).",
+        unitreeRobotName(robot_));
     } else {
       unitree::robot::ChannelFactory::Instance()->Init(0, iface.c_str());
       RCLCPP_INFO(get_logger(), "unitree_sdk2 DDS domain 0 on %s", iface.c_str());
@@ -78,11 +100,11 @@ public:
     lowcmd_pub_->InitChannel();
     lowstate_sub_.reset(new unitree::robot::ChannelSubscriber<LowState>("rt/lowstate"));
     lowstate_sub_->InitChannel(
-      std::bind(&Go2DdsBridge::onLowState, this, std::placeholders::_1), 1);
+      std::bind(&UnitreeDdsBridge::onLowState, this, std::placeholders::_1), 1);
 
     command_sub_ = create_subscription<sensor_msgs::msg::JointState>(
       get_parameter("command_topic").as_string(), 10,
-      std::bind(&Go2DdsBridge::onJointCommand, this, std::placeholders::_1));
+      std::bind(&UnitreeDdsBridge::onJointCommand, this, std::placeholders::_1));
     joint_pub_ = create_publisher<sensor_msgs::msg::JointState>(
       get_parameter("joint_state_topic").as_string(), 10);
     contact_pub_ = create_publisher<champ_msgs::msg::ContactsStamped>(
@@ -93,13 +115,15 @@ public:
     const double publish_rate = std::max(1.0, get_parameter("publish_rate").as_double());
     timer_ = create_wall_timer(
       std::chrono::microseconds(static_cast<int>(1e6 / publish_rate)),
-      std::bind(&Go2DdsBridge::onTimer, this));
+      std::bind(&UnitreeDdsBridge::onTimer, this));
 
     RCLCPP_WARN(
       get_logger(),
-      "Go2 Sim2Real DDS bridge: publish rt/lowcmd, subscribe rt/lowstate at %.0f Hz. "
-      "Sport/control services must stay off. Do not mix with the Sport API.",
-      publish_rate);
+      "%s Sim2Real DDS bridge: publish rt/lowcmd (motor mode 0x%02X, kp %.0f, kd %.1f), "
+      "subscribe rt/lowstate at %.0f Hz. Sport/control services must stay off. "
+      "Do not mix with the Sport API.",
+      unitreeRobotName(robot_), static_cast<unsigned>(motor_mode_),
+      static_cast<double>(kp_), static_cast<double>(kd_), publish_rate);
   }
 
 private:
@@ -142,7 +166,7 @@ private:
     low_cmd_.level_flag() = LOWLEVEL;
     low_cmd_.gpio() = 0;
     for (int i = 0; i < 20; ++i) {
-      // Official unitree_sdk2 go2_stand_example: PMSM servo mode 0x01.
+      // Official unitree_sdk2 stand examples: PMSM servo mode (Go2 0x01, B2 0x0A).
       low_cmd_.motor_cmd()[i].mode() = motor_mode_;
       low_cmd_.motor_cmd()[i].q() = static_cast<float>(PosStopF);
       low_cmd_.motor_cmd()[i].dq() = static_cast<float>(VelStopF);
@@ -155,10 +179,10 @@ private:
   void onLowState(const void * message)
   {
     const auto * state = static_cast<const LowState *>(message);
-    std::array<double, kGo2MotorCount> q{};
-    std::array<double, kGo2MotorCount> dq{};
+    std::array<double, kUnitreeMotorCount> q{};
+    std::array<double, kUnitreeMotorCount> dq{};
     std::array<double, 4> force{};
-    for (int i = 0; i < kGo2MotorCount; ++i) {
+    for (int i = 0; i < kUnitreeMotorCount; ++i) {
       q[static_cast<size_t>(i)] = state->motor_state()[i].q();
       dq[static_cast<size_t>(i)] = state->motor_state()[i].dq();
     }
@@ -192,11 +216,11 @@ private:
 
   void onJointCommand(const sensor_msgs::msg::JointState::SharedPtr msg)
   {
-    std::array<double, kGo2MotorCount> q{};
-    std::array<bool, kGo2MotorCount> seen{};
+    std::array<double, kUnitreeMotorCount> q{};
+    std::array<bool, kUnitreeMotorCount> seen{};
     const size_t n = std::min(msg->name.size(), msg->position.size());
     for (size_t i = 0; i < n; ++i) {
-      const int idx = go2MotorIndex(msg->name[i]);
+      const int idx = unitreeMotorIndex(msg->name[i]);
       if (idx < 0) {
         continue;
       }
@@ -212,7 +236,8 @@ private:
     if (!std::all_of(seen.begin(), seen.end(), [](bool v) { return v; })) {
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 2000,
-        "JointState is missing a Go2 motor name (need FR/FL/RR/RL hip, thigh, calf)");
+        "JointState is missing a %s motor name (need FR/FL/RR/RL hip, thigh, calf)",
+        unitreeRobotName(robot_));
       return;
     }
 
@@ -224,10 +249,10 @@ private:
 
   void onTimer()
   {
-    std::array<double, kGo2MotorCount> measured{};
-    std::array<double, kGo2MotorCount> command{};
-    std::array<double, kGo2MotorCount> start_q{};
-    std::array<double, kGo2MotorCount> measured_dq{};
+    std::array<double, kUnitreeMotorCount> measured{};
+    std::array<double, kUnitreeMotorCount> command{};
+    std::array<double, kUnitreeMotorCount> start_q{};
+    std::array<double, kUnitreeMotorCount> measured_dq{};
     std::array<double, 4> force{};
     sensor_msgs::msg::Imu imu;
     bool have_state = false;
@@ -271,7 +296,7 @@ private:
     const float kp = kp_;
     const float kd = command_stale ? std::max(kd_, 2.0f) : kd_;
     int clamped = 0;
-    for (int i = 0; i < kGo2MotorCount; ++i) {
+    for (int i = 0; i < kUnitreeMotorCount; ++i) {
       const float q_meas = static_cast<float>(measured[static_cast<size_t>(i)]);
       float q_des = q_meas;
       if (have_command) {
@@ -279,7 +304,7 @@ private:
         const float q_start = static_cast<float>(start_q[static_cast<size_t>(i)]);
         q_des = (1.0f - blend) * q_start + blend * q_cmd;
       }
-      const float q_safe = go2ClampJoint(i, q_des);
+      const float q_safe = unitreeClampJoint(*limits_, i, q_des);
       if (q_safe != q_des) {
         ++clamped;
         q_des = q_safe;
@@ -294,7 +319,8 @@ private:
     if (clamped > 0) {
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 1000,
-        "%d joint target(s) outside Go2 URDF limits were clamped before rt/lowcmd", clamped);
+        "%d joint target(s) outside %s URDF limits were clamped before rt/lowcmd",
+        clamped, unitreeRobotName(robot_));
     }
     low_cmd_.crc() = crc32_core(
       reinterpret_cast<uint32_t *>(&low_cmd_), (sizeof(LowCmd) >> 2) - 1);
@@ -303,21 +329,21 @@ private:
 
   void publishMeasurements(
     const builtin_interfaces::msg::Time & stamp,
-    const std::array<double, kGo2MotorCount> & q,
-    const std::array<double, kGo2MotorCount> & dq,
+    const std::array<double, kUnitreeMotorCount> & q,
+    const std::array<double, kUnitreeMotorCount> & dq,
     const std::array<double, 4> & force,
     sensor_msgs::msg::Imu imu)
   {
     sensor_msgs::msg::JointState joints;
     joints.header.stamp = stamp;
-    joints.name.assign(kGo2MotorJointNames, kGo2MotorJointNames + kGo2MotorCount);
+    joints.name.assign(kUnitreeMotorJointNames, kUnitreeMotorJointNames + kUnitreeMotorCount);
     joints.position.assign(q.begin(), q.end());
     joints.velocity.assign(dq.begin(), dq.end());
     joint_pub_->publish(joints);
 
     champ_msgs::msg::ContactsStamped contacts;
     contacts.header.stamp = stamp;
-    contacts.header.frame_id = "base";
+    contacts.header.frame_id = base_frame_;
     contacts.contacts = {false, false, false, false};
     for (int i = 0; i < 4; ++i) {
       contacts.contacts[kChampIndexFromFootForce[i]] =
@@ -340,10 +366,10 @@ private:
   LowCmd low_cmd_{};
 
   std::mutex mutex_;
-  std::array<double, kGo2MotorCount> command_q_{};
-  std::array<double, kGo2MotorCount> start_q_{};
-  std::array<double, kGo2MotorCount> measured_q_{};
-  std::array<double, kGo2MotorCount> measured_dq_{};
+  std::array<double, kUnitreeMotorCount> command_q_{};
+  std::array<double, kUnitreeMotorCount> start_q_{};
+  std::array<double, kUnitreeMotorCount> measured_q_{};
+  std::array<double, kUnitreeMotorCount> measured_dq_{};
   std::array<double, 4> foot_force_{};
   sensor_msgs::msg::Imu last_imu_;
   bool has_command_{false};
@@ -352,6 +378,9 @@ private:
   std::chrono::steady_clock::time_point last_command_monotonic_{};
   std::chrono::steady_clock::time_point ramp_start_monotonic_{};
 
+  UnitreeRobot robot_{UnitreeRobot::kGo2};
+  const UnitreeJointLimits * limits_{&kGo2JointLimits};
+  std::string base_frame_{"base"};
   float kp_{40.0f};
   float kd_{1.0f};
   float tau_{0.0f};
@@ -364,7 +393,7 @@ private:
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<Go2DdsBridge>());
+  rclcpp::spin(std::make_shared<UnitreeDdsBridge>());
   rclcpp::shutdown();
   return 0;
 }

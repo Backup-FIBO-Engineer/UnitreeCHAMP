@@ -69,8 +69,8 @@ def generate_launch_description():
         ),
         Node(
             package='champ_base_gait_planning',
-            executable='go2_dds_bridge',
-            name='go2_dds_bridge',
+            executable='unitree_dds_bridge',
+            name='unitree_dds_bridge',
             output='screen',
             parameters=[
                 lowcmd_config,
