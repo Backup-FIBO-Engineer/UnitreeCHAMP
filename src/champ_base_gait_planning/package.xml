@@ -2,7 +2,7 @@
 <package format="3">
   <name>champ_base_gait_planning</name>
   <version>0.1.0</version>
-  <description>CHAMP gait planning + IK/FK for XGO and Unitree Go2</description>
+  <description>CHAMP gait planning + IK/FK for XGO, Unitree Go2 and Unitree B2</description>
   <maintainer email="fibo@todo.todo">fibo</maintainer>
   <license>BSD</license>
 

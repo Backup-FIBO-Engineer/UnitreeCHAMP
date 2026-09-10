@@ -11,14 +11,14 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description():
     pkg_share = get_package_share_directory('champ_base_gait_planning')
 
-    urdf_path = os.path.join(pkg_share, 'urdf', 'go2.urdf')
+    urdf_path = os.path.join(pkg_share, 'urdf', 'b2.urdf')
     robot_description = ParameterValue(Command(['cat ', urdf_path]), value_type=str)
     cyclone_xml = os.path.join(pkg_share, 'config', 'cyclonedds_ros_loopback.xml')
 
-    gait_config = os.path.join(pkg_share, 'config', 'go2_gait.yaml')
-    joints_config = os.path.join(pkg_share, 'config', 'go2_joints.yaml')
-    links_config = os.path.join(pkg_share, 'config', 'go2_links.yaml')
-    lowcmd_config = os.path.join(pkg_share, 'config', 'go2_lowcmd.yaml')
+    gait_config = os.path.join(pkg_share, 'config', 'b2_gait.yaml')
+    joints_config = os.path.join(pkg_share, 'config', 'b2_joints.yaml')
+    links_config = os.path.join(pkg_share, 'config', 'b2_links.yaml')
+    lowcmd_config = os.path.join(pkg_share, 'config', 'b2_lowcmd.yaml')
 
     common_params = [
         {'urdf': robot_description},
@@ -31,7 +31,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'network_interface',
             default_value='',
-            description='NIC cabled to the Go2 (e.g. eth0). Empty uses unitree_sdk2 default.',
+            description='NIC cabled to the B2 (e.g. eth0). Empty uses unitree_sdk2 default.',
         ),
         DeclareLaunchArgument(
             'command_topic',
@@ -48,7 +48,7 @@ def generate_launch_description():
             value='file://' + cyclone_xml,
         ),
         LogInfo(msg=[
-            'Go2 Sim2Real: rt/lowcmd + rt/lowstate via unitree_sdk2. Sport must stay off.',
+            'B2 Sim2Real: rt/lowcmd + rt/lowstate via unitree_sdk2. Sport must stay off.',
         ]),
         Node(
             package='champ_base_gait_planning',

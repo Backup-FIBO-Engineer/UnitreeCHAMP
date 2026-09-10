@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Comprehensive static checker for XGO URDF/Xacro versus MuJoCo MJCF."""
+"""Comprehensive static checker for a robot URDF/Xacro versus MuJoCo MJCF (XGO, Go2, B2)."""
 
 from __future__ import annotations
 
@@ -19,6 +19,28 @@ REVOLUTE_JOINTS = [
 ]
 FIXED_PAYLOAD_LINKS = ('camera_link', 'laser_link', 'imu_link')
 LEGS = ('lf', 'rf', 'lh', 'rh')
+
+UNITREE_JOINTS = [
+    'FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint',
+    'FR_hip_joint', 'FR_thigh_joint', 'FR_calf_joint',
+    'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint',
+    'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint',
+]
+
+# Unitree robots: MJCF collision is a box for the trunk (half sizes from the URDF
+# collision box) and the IMU is a massless marker body, so its inertial is not compared.
+UNITREE = {
+    'go2': {
+        'base_link': 'base',
+        'imu_link': 'imu',
+        'base_half_size': np.array([0.1881, 0.04675, 0.057]),
+    },
+    'b2': {
+        'base_link': 'base_link',
+        'imu_link': 'imu_link',
+        'base_half_size': np.array([0.25, 0.14, 0.075]),
+    },
+}
 
 
 def vec(text: str) -> np.ndarray:
@@ -128,18 +150,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('urdf_xacro', type=Path)
     parser.add_argument('mujoco_xml', type=Path)
-    parser.add_argument('--robot', choices=('xgo', 'go2'), default='xgo')
+    parser.add_argument('--robot', choices=('xgo',) + tuple(sorted(UNITREE)), default='xgo')
     args = parser.parse_args()
 
-    if args.robot == 'go2':
-        revolute_joints = [
-            'FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint',
-            'FR_hip_joint', 'FR_thigh_joint', 'FR_calf_joint',
-            'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint',
-            'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint',
-        ]
-        payload_links = ('imu',)
-        base_link = 'base'
+    unitree = UNITREE.get(args.robot)
+    if unitree is not None:
+        revolute_joints = UNITREE_JOINTS
+        payload_links = (unitree['imu_link'],)
+        base_link = unitree['base_link']
         legs = ('FL', 'FR', 'RL', 'RR')
     else:
         revolute_joints = REVOLUTE_JOINTS
@@ -192,7 +210,7 @@ def main() -> int:
     for link in (base_link,) + payload_links:
         ui = urdf_links.get(link)
         mi = mj_inertials.get(link)
-        if args.robot == 'go2' and link == 'imu':
+        if unitree is not None and link == unitree['imu_link']:
             failures += result(f'{link} body exists', bodies.get(link) is not None)
             continue
         failures += result(f'{link} explicit inertial', mi is not None)
@@ -223,7 +241,7 @@ def main() -> int:
                 failures += result(f'{leg} foot {element_name} origin', close(foot_joint['origin'], vec(element.attrib['pos']), 1e-12))
 
     default_actuator = root.find('./default/position')
-    if args.robot == 'go2':
+    if unitree is not None:
         for name in revolute_joints:
             effort = float(urdf_joints[name]['limit']['effort'])
             actuator = next(a for a in actuators if a.attrib.get('joint') == name)
@@ -245,7 +263,7 @@ def main() -> int:
         failures += result(f'{link} principal inertia triangle', triangle, str(eigenvalues))
 
     chain_links = [base_link] + [urdf_joints[name]['child'] for name in revolute_joints]
-    if args.robot == 'go2':
+    if unitree is not None:
         urdf_total = sum(urdf_links[link]['mass'] for link in chain_links)
         mjcf_total = sum(mj_inertials[link]['mass'] for link in chain_links)
         failures += result(
@@ -258,8 +276,8 @@ def main() -> int:
         mjcf_total = sum(link['mass'] for link in mj_inertials.values())
         failures += result('total explicit mass', math.isclose(urdf_total, mjcf_total, abs_tol=1e-12), f'urdf={urdf_total:.12f} kg mjcf={mjcf_total:.12f} kg')
 
-    if args.robot == 'go2':
-        expected_base_size = np.array([0.1881, 0.04675, 0.057])
+    if unitree is not None:
+        expected_base_size = unitree['base_half_size']
         expected_base_pos = np.array([0.0, 0.0, 0.0])
         size_label = 'base collision half-size from URDF box'
         pos_label = 'base collision origin'

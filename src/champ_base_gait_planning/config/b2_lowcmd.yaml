@@ -1,0 +1,20 @@
+/**:
+  ros__parameters:
+    robot: b2
+    command_topic: joint_commands
+    joint_state_topic: joint_states
+    contact_topic: foot_contacts
+    imu_topic: imu/data
+    network_interface: ""
+    publish_rate: 500.0
+    # unitree_sdk2 example/b2/b2_stand_example.cpp: Kp 1000, Kd 10, mode 0x0A.
+    # B2 weighs ~70 kg (URDF); Go2-level gains (40/1) cannot hold it up.
+    kp: 1000.0
+    kd: 10.0
+    tau: 0.0
+    motor_mode: 10  # 0x0A PMSM servo (unitree_sdk2 b2_stand_example)
+    command_timeout_sec: 0.5
+    ramp_sec: 3.0
+    # rt/lowstate foot_force is a raw sensor value; B2 feet read higher than Go2.
+    contact_force_threshold: 40.0
+    release_sport: true
