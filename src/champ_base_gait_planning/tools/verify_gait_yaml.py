@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Lock Go2 gait yaml to the numbers used by tools/verify_champ_go2.cpp."""
+"""Lock config/<robot>_gait.yaml to the numbers used by tools/verify_champ_<robot>.cpp.
+
+    verify_gait_yaml.py [go2|b2]
+"""
 
 from __future__ import annotations
 
@@ -8,24 +11,42 @@ import sys
 from pathlib import Path
 
 EXPECTED = {
-    'knee_orientation': '">>"',
-    'odom_scaler': 0.9,
-    'max_linear_velocity_x': 0.50,
-    'max_linear_velocity_y': 0.15,
-    'max_angular_velocity_z': 0.6,
-    'com_x_translation': 0.0,
-    'swing_height': 0.08,
-    'stance_depth': 0.0,
-    'stance_duration': 0.25,
-    'nominal_height': 0.30,
+    'go2': {
+        'knee_orientation': '">>"',
+        'odom_scaler': 0.9,
+        'max_linear_velocity_x': 0.50,
+        'max_linear_velocity_y': 0.15,
+        'max_angular_velocity_z': 0.6,
+        'com_x_translation': 0.0,
+        'swing_height': 0.08,
+        'stance_depth': 0.0,
+        'stance_duration': 0.25,
+        'nominal_height': 0.30,
+    },
+    'b2': {
+        'knee_orientation': '">>"',
+        'odom_scaler': 0.9,
+        'max_linear_velocity_x': 0.60,
+        'max_linear_velocity_y': 0.20,
+        'max_angular_velocity_z': 0.6,
+        'com_x_translation': 0.0,
+        'swing_height': 0.10,
+        'stance_depth': 0.0,
+        'stance_duration': 0.30,
+        'nominal_height': 0.50,
+    },
 }
 
 
 def main() -> int:
-    path = Path(__file__).resolve().parents[1] / 'config' / 'go2_gait.yaml'
+    robot = sys.argv[1] if len(sys.argv) > 1 else 'go2'
+    if robot not in EXPECTED:
+        print(f'unknown robot {robot!r}; choose from {sorted(EXPECTED)}')
+        return 2
+    path = Path(__file__).resolve().parents[1] / 'config' / f'{robot}_gait.yaml'
     text = path.read_text()
     failures = 0
-    for key, expected in EXPECTED.items():
+    for key, expected in EXPECTED[robot].items():
         match = re.search(rf'{key}:\s*(\S+)', text)
         if match is None:
             print(f'[FAIL] {key} missing in {path}')

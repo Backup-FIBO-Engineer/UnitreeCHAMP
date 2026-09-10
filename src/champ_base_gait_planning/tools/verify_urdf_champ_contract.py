@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that XGO URDF satisfies CHAMP's loader/IK assumptions.
+"""Check that a robot URDF satisfies CHAMP's loader/IK assumptions (XGO, Go2, B2).
 
 champ::URDF::getPose sums parent_to_joint xyz and ignores rpy, and the IK
 expects hip axis +X and thigh/calf axis +Y. This is the contract between
@@ -68,6 +68,47 @@ PRESETS = {
                 'upper': [0.0, -0.0955, 0.0],
                 'lower': [0.0, 0.0, -0.213],
                 'foot': [0.0, 0.0, -0.213],
+            },
+        },
+    },
+    # unitree_ros b2_description. The calf joints carry the official +-8.7e-5 m
+    # y offset (RR_foot_joint too); CHAMP folds them into l0.
+    'b2': {
+        'prefix': {
+            'left_front': 'FL',
+            'right_front': 'FR',
+            'left_hind': 'RL',
+            'right_hind': 'RR',
+        },
+        'link_suffixes': ('_hip', '_thigh', '_calf', '_foot'),
+        'joint_suffixes': ('_hip_joint', '_thigh_joint', '_calf_joint', '_foot_joint'),
+        'hip_parent': 'base_link',
+        'reach': 0.70,
+        'l0_abs_range': (0.11, 0.13),
+        'xyz': {
+            'FL': {
+                'hip': [0.3285, 0.072, 0.0],
+                'upper': [0.0, 0.11973, 0.0],
+                'lower': [0.0, -8.6984e-05, -0.35],
+                'foot': [0.0, 0.0, -0.35],
+            },
+            'FR': {
+                'hip': [0.3285, -0.072, 0.0],
+                'upper': [0.0, -0.11973, 0.0],
+                'lower': [0.0, 8.6986e-05, -0.35],
+                'foot': [0.0, 0.0, -0.35],
+            },
+            'RL': {
+                'hip': [-0.3285, 0.072, 0.0],
+                'upper': [0.0, 0.11973, 0.0],
+                'lower': [0.0, -8.6984e-05, -0.35],
+                'foot': [0.0, 0.0, -0.35],
+            },
+            'RR': {
+                'hip': [-0.3285, -0.072, 0.0],
+                'upper': [0.0, -0.11973, 0.0],
+                'lower': [0.0, 8.6986e-05, -0.35],
+                'foot': [0.0, -8.6984e-05, -0.35],
             },
         },
     },
