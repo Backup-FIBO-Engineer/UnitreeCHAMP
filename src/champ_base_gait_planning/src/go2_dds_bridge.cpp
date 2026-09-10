@@ -264,7 +264,7 @@ private:
       return;
     }
 
-    const auto stamp = this->now().to_msg();
+    const builtin_interfaces::msg::Time stamp = this->now();
     publishMeasurements(stamp, measured, measured_dq, force, imu);
 
     const float blend = static_cast<float>(std::min(1.0, std::max(0.0, ramp_t)));
