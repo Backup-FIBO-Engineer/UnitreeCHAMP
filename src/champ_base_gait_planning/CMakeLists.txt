@@ -77,9 +77,27 @@ if(unitree_sdk2_FOUND)
   ament_target_dependencies(unitree_dds_bridge rclcpp sensor_msgs champ_msgs)
   if(TARGET unitree_sdk2)
     target_link_libraries(unitree_dds_bridge unitree_sdk2 Threads::Threads)
+    if(TARGET ddsc)
+      get_target_property(_unitree_ddsc_lib ddsc IMPORTED_LOCATION)
+      get_filename_component(UNITREE_SDK2_LIB_DIR "${_unitree_ddsc_lib}" DIRECTORY)
+    endif()
   else()
     target_include_directories(unitree_dds_bridge PRIVATE ${UNITREE_SDK2_INCLUDE_DIR})
     target_link_libraries(unitree_dds_bridge ${UNITREE_SDK2_LIB} Threads::Threads)
+    get_filename_component(UNITREE_SDK2_LIB_DIR "${UNITREE_SDK2_LIB}" DIRECTORY)
+  endif()
+  if(UNITREE_SDK2_LIB_DIR)
+    # unitree_sdk2 ships its own CycloneDDS (libddsc.so.0 / libddscxx.so.0) whose soname
+    # collides with the libddsc.so.0 of ROS 2 rmw_cyclonedds. If the ROS copy wins via
+    # LD_LIBRARY_PATH the SDK's libddscxx aborts with "free(): invalid pointer" as soon as
+    # another rt/lowstate participant is discovered. Pin the SDK copy with a DT_RPATH, which
+    # the dynamic loader consults before LD_LIBRARY_PATH.
+    set_target_properties(unitree_dds_bridge PROPERTIES
+      BUILD_RPATH "${UNITREE_SDK2_LIB_DIR}"
+      INSTALL_RPATH "${UNITREE_SDK2_LIB_DIR}"
+      INSTALL_RPATH_USE_LINK_PATH FALSE
+      SKIP_BUILD_RPATH FALSE)
+    target_link_options(unitree_dds_bridge PRIVATE "LINKER:--disable-new-dtags")
   endif()
   set(UNITREE_DDS_BRIDGE_BUILT TRUE)
   message(STATUS "unitree_sdk2 found: building unitree_dds_bridge (Go2/B2 rt/lowcmd Sim2Real)")

@@ -197,6 +197,15 @@ If CHAMP commands stop, the last pose is held with extra damping.
 
 Do not mix this launch with Sport. It is not started by the RViz launch.
 
+unitree_sdk2 ships its own CycloneDDS (`libddsc.so.0`, `libddscxx.so.0`) with
+the same soname as the ROS 2 `rmw_cyclonedds` copy. The bridge binary is
+linked with a `DT_RPATH` to the unitree_sdk2 lib directory so its SDK side
+always gets the matching CycloneDDS regardless of `LD_LIBRARY_PATH` order
+(the mismatch aborted with `free(): invalid pointer` as soon as `rt/lowstate`
+was discovered). Check with
+`ldd $(ros2 pkg prefix champ_base_gait_planning)/lib/champ_base_gait_planning/unitree_dds_bridge | grep ddsc`;
+both entries must point at the unitree_sdk2 install.
+
 ## Config
 
 XGO:
