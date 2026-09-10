@@ -1,0 +1,16 @@
+/**:
+  ros__parameters:
+    command_topic: joint_commands
+    joint_state_topic: joint_states
+    contact_topic: foot_contacts
+    imu_topic: imu/data
+    network_interface: ""
+    publish_rate: 500.0
+    kp: 40.0
+    kd: 1.0
+    tau: 0.0
+    motor_mode: 1  # 0x01 PMSM servo (unitree_sdk2 go2_stand_example)
+    command_timeout_sec: 0.5
+    ramp_sec: 2.0
+    contact_force_threshold: 20.0
+    release_sport: true

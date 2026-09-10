@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>champ_base_gait_planning</name>
+  <version>0.1.0</version>
+  <description>CHAMP gait planning + IK/FK for XGO and Unitree Go2</description>
+  <maintainer email="fibo@todo.todo">fibo</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>champ</depend>
+  <depend>champ_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>trajectory_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>tf2</depend>
+  <depend>urdf</depend>
+  <depend>message_filters</depend>
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>rviz2</depend>
+  <depend>xacro</depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

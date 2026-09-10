@@ -1,0 +1,17 @@
+/**:
+  ros__parameters:
+    gait:
+      knee_orientation: ">>"
+      odom_scaler: 0.9
+      # Real XGO leg reach = 0.0599 + 0.0862 = 0.146 m
+      # Limits verified so worst-case simultaneous (vx,vy,wz) keeps IK targets
+      # within 93% of reach: nominal 0.10 + wz<=0.8. Raising nominal_height or
+      # max velocities together risks unreachable IK targets.
+      max_linear_velocity_x: 0.25
+      max_linear_velocity_y: 0.12
+      max_angular_velocity_z: 0.8
+      com_x_translation: 0.0
+      swing_height: 0.02
+      stance_depth: 0.0
+      stance_duration: 0.25
+      nominal_height: 0.10
