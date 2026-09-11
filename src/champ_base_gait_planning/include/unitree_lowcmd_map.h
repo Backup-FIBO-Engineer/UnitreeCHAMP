@@ -1,126 +1,119 @@
 #ifndef UNITREE_LOWCMD_MAP_H
 #define UNITREE_LOWCMD_MAP_H
 
+#include <array>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
-// Unitree Go2 and B2 share the unitree_go LowCmd_/LowState_ IDL on
-// rt/lowcmd / rt/lowstate. motor_cmd[0..11] and foot_force[0..3] order is
-// FR, FL, RR, RL. CHAMP JointState / ContactsStamped is FL, FR, RL, RR.
-inline constexpr int kUnitreeMotorCount = 12;
+#include <urdf_model/model.h>
 
-inline constexpr const char * kUnitreeMotorJointNames[kUnitreeMotorCount] = {
-  "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
-  "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint",
-  "RR_hip_joint", "RR_thigh_joint", "RR_calf_joint",
-  "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint",
+// Unitree quadrupeds publish/consume the unitree_go LowCmd_/LowState_ IDL on
+// rt/lowcmd / rt/lowstate. motor_cmd[0..11], motor_state[0..11] and
+// foot_force[0..3] are laid out by leg FR, FL, RR, RL and, inside a leg, hip,
+// thigh, calf (unitree_sdk2 go2/b2 examples). That layout is protocol, not
+// robot geometry: the joint names behind each slot come from the CHAMP
+// joints_map yaml and the joint limits from the URDF of the selected robot.
+inline constexpr int kUnitreeLegCount = 4;
+inline constexpr int kUnitreeJointsPerLeg = 3;
+inline constexpr int kUnitreeMotorCount = kUnitreeLegCount * kUnitreeJointsPerLeg;
+
+// joints_map / links_map keys in protocol leg order.
+inline constexpr const char * kUnitreeLegKeys[kUnitreeLegCount] = {
+  "right_front", "left_front", "right_hind", "left_hind",
 };
 
-// foot_force[i] (FR,FL,RR,RL) -> ContactsStamped index (LF,RF,LH,RH)
-inline constexpr int kChampIndexFromFootForce[4] = {1, 0, 3, 2};
+// CHAMP leg arrays are LF, RF, LH, RH. kChampLegFromUnitreeLeg[i] is the CHAMP
+// index of protocol leg i (FR->1, FL->0, RR->3, RL->2). Used for foot_force.
+inline constexpr int kChampLegFromUnitreeLeg[kUnitreeLegCount] = {1, 0, 3, 2};
 
-enum class UnitreeRobot
+struct UnitreeMotorMap
 {
-  kGo2,
-  kB2,
+  std::array<std::string, kUnitreeMotorCount> joint_names;
+
+  int motorIndex(const std::string & joint_name) const
+  {
+    for (int i = 0; i < kUnitreeMotorCount; ++i) {
+      if (joint_names[static_cast<size_t>(i)] == joint_name) {
+        return i;
+      }
+    }
+    return -1;
+  }
 };
 
 struct UnitreeJointLimits
 {
-  float lower[kUnitreeMotorCount];
-  float upper[kUnitreeMotorCount];
+  std::array<float, kUnitreeMotorCount> lower{};
+  std::array<float, kUnitreeMotorCount> upper{};
 };
 
-// Joint limits from urdf/go2.urdf, in motor order. Front and rear thighs
-// differ. The MuJoCo sim clamps ctrl to these; the real robot does not.
-inline constexpr UnitreeJointLimits kGo2JointLimits = {
-  {
-    -1.0472f, -1.5708f, -2.7227f,
-    -1.0472f, -1.5708f, -2.7227f,
-    -1.0472f, -0.5236f, -2.7227f,
-    -1.0472f, -0.5236f, -2.7227f,
-  },
-  {
-    1.0472f, 3.4907f, -0.83776f,
-    1.0472f, 3.4907f, -0.83776f,
-    1.0472f, 4.5379f, -0.83776f,
-    1.0472f, 4.5379f, -0.83776f,
-  },
-};
-
-// Joint limits from urdf/b2.urdf (unitree_ros b2_description), in motor
-// order. All four legs share the same limits.
-inline constexpr UnitreeJointLimits kB2JointLimits = {
-  {
-    -0.87f, -0.94f, -2.82f,
-    -0.87f, -0.94f, -2.82f,
-    -0.87f, -0.94f, -2.82f,
-    -0.87f, -0.94f, -2.82f,
-  },
-  {
-    0.87f, 4.69f, -0.43f,
-    0.87f, 4.69f, -0.43f,
-    0.87f, 4.69f, -0.43f,
-    0.87f, 4.69f, -0.43f,
-  },
-};
-
-inline const UnitreeJointLimits & unitreeJointLimits(UnitreeRobot robot)
+// legs[i] is the joints_map entry for kUnitreeLegKeys[i]; the first three names
+// are the actuated hip, thigh, calf joints (the fourth is the fixed foot joint).
+inline UnitreeMotorMap unitreeMotorMapFromLegs(
+  const std::array<std::vector<std::string>, kUnitreeLegCount> & legs)
 {
-  return robot == UnitreeRobot::kB2 ? kB2JointLimits : kGo2JointLimits;
-}
-
-// motor_cmd.mode used by the official unitree_sdk2 stand examples:
-// go2_stand_example 0x01, b2_stand_example 0x0A.
-inline uint8_t unitreeDefaultMotorMode(UnitreeRobot robot)
-{
-  return robot == UnitreeRobot::kB2 ? 0x0A : 0x01;
-}
-
-inline const char * unitreeRobotName(UnitreeRobot robot)
-{
-  return robot == UnitreeRobot::kB2 ? "B2" : "Go2";
-}
-
-// URDF root link: urdf/go2.urdf "base", urdf/b2.urdf "base_link".
-inline const char * unitreeBaseLink(UnitreeRobot robot)
-{
-  return robot == UnitreeRobot::kB2 ? "base_link" : "base";
-}
-
-inline bool unitreeRobotFromName(const std::string & name, UnitreeRobot & robot)
-{
-  if (name == "go2" || name == "Go2" || name == "GO2") {
-    robot = UnitreeRobot::kGo2;
-    return true;
+  UnitreeMotorMap map;
+  for (int leg = 0; leg < kUnitreeLegCount; ++leg) {
+    const auto & names = legs[static_cast<size_t>(leg)];
+    if (names.size() < static_cast<size_t>(kUnitreeJointsPerLeg)) {
+      throw std::runtime_error(
+              std::string("joints_map.") + kUnitreeLegKeys[leg] +
+              " needs hip, thigh and calf joint names");
+    }
+    for (int j = 0; j < kUnitreeJointsPerLeg; ++j) {
+      map.joint_names[static_cast<size_t>(leg * kUnitreeJointsPerLeg + j)] =
+        names[static_cast<size_t>(j)];
+    }
   }
-  if (name == "b2" || name == "B2") {
-    robot = UnitreeRobot::kB2;
-    return true;
+  for (int i = 0; i < kUnitreeMotorCount; ++i) {
+    for (int j = i + 1; j < kUnitreeMotorCount; ++j) {
+      if (map.joint_names[static_cast<size_t>(i)] == map.joint_names[static_cast<size_t>(j)]) {
+        throw std::runtime_error(
+                "joints_map lists joint '" + map.joint_names[static_cast<size_t>(i)] +
+                "' twice");
+      }
+    }
   }
-  return false;
+  return map;
+}
+
+// Position limits of every motor joint, read from the URDF <limit lower upper>.
+inline UnitreeJointLimits unitreeJointLimitsFromUrdf(
+  const urdf::ModelInterface & model, const UnitreeMotorMap & map)
+{
+  UnitreeJointLimits limits;
+  for (int i = 0; i < kUnitreeMotorCount; ++i) {
+    const std::string & name = map.joint_names[static_cast<size_t>(i)];
+    const urdf::JointConstSharedPtr joint = model.getJoint(name);
+    if (!joint) {
+      throw std::runtime_error("URDF has no joint '" + name + "' listed in joints_map");
+    }
+    if (joint->type != urdf::Joint::REVOLUTE && joint->type != urdf::Joint::CONTINUOUS) {
+      throw std::runtime_error("URDF joint '" + name + "' is not revolute");
+    }
+    if (!joint->limits || !(joint->limits->lower < joint->limits->upper)) {
+      throw std::runtime_error(
+              "URDF joint '" + name + "' needs <limit lower upper> for rt/lowcmd clamping");
+    }
+    limits.lower[static_cast<size_t>(i)] = static_cast<float>(joint->limits->lower);
+    limits.upper[static_cast<size_t>(i)] = static_cast<float>(joint->limits->upper);
+  }
+  return limits;
 }
 
 inline float unitreeClampJoint(
   const UnitreeJointLimits & limits, int motor_index, float q)
 {
-  if (q < limits.lower[motor_index]) {
-    return limits.lower[motor_index];
+  const size_t i = static_cast<size_t>(motor_index);
+  if (q < limits.lower[i]) {
+    return limits.lower[i];
   }
-  if (q > limits.upper[motor_index]) {
-    return limits.upper[motor_index];
+  if (q > limits.upper[i]) {
+    return limits.upper[i];
   }
   return q;
-}
-
-inline int unitreeMotorIndex(const std::string & joint_name)
-{
-  for (int i = 0; i < kUnitreeMotorCount; ++i) {
-    if (joint_name == kUnitreeMotorJointNames[i]) {
-      return i;
-    }
-  }
-  return -1;
 }
 
 #endif

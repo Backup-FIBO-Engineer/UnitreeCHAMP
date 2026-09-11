@@ -1,5 +1,5 @@
-#ifndef CHAMP_GO2_MOTOR_CRC_H
-#define CHAMP_GO2_MOTOR_CRC_H
+#ifndef CHAMP_UNITREE_MOTOR_CRC_H
+#define CHAMP_UNITREE_MOTOR_CRC_H
 
 #include <cstdint>
 

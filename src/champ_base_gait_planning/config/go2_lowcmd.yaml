@@ -1,17 +1,21 @@
+# unitree_dds_bridge parameters for Go2. Joint names, joint limits and the
+# base/IMU frames come from urdf/go2.urdf + go2_joints.yaml + go2_links.yaml,
+# which the launch passes alongside this file.
 /**:
   ros__parameters:
-    robot: go2
     command_topic: joint_commands
     joint_state_topic: joint_states
     contact_topic: foot_contacts
     imu_topic: imu/data
     network_interface: ""
     publish_rate: 500.0
+    # unitree_sdk2 example/go2/go2_stand_example.cpp: Kp 40, Kd 1, mode 0x01.
     kp: 40.0
     kd: 1.0
     tau: 0.0
-    motor_mode: 1  # 0x01 PMSM servo (unitree_sdk2 go2_stand_example)
+    motor_mode: 1  # 0x01 PMSM servo
     command_timeout_sec: 0.5
     ramp_sec: 2.0
+    # rt/lowstate foot_force is a raw sensor value.
     contact_force_threshold: 20.0
     release_sport: true

@@ -2,6 +2,7 @@
   ros__parameters:
     links_map:
       base: base
+      imu: imu
       left_front:
         - FL_hip
         - FL_thigh

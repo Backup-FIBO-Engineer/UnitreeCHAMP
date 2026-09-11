@@ -125,7 +125,7 @@ void QuadrupedController::cmdVelCallback_(const geometry_msgs::msg::Twist::Share
     RCLCPP_WARN_THROTTLE(
       get_logger(), *get_clock(), 2000,
       "cmd_vel (%.2f, %.2f, %.2f) exceeds gait limits ±(%.2f, %.2f, %.2f). "
-      "CHAMP clamps it. Lower teleop speed (z/x), default teleop 0.5 is the Go2 max vx.",
+      "CHAMP clamps it. Lower the teleop speed (z/x) to gait.max_linear_velocity_* of this robot.",
       msg->linear.x, msg->linear.y, msg->angular.z, max_x, max_y, max_z);
   }
   req_vel_.linear.x = msg->linear.x;

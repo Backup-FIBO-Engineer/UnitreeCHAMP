@@ -1,6 +1,8 @@
+# unitree_dds_bridge parameters for B2. Joint names, joint limits and the
+# base/IMU frames come from urdf/b2.urdf + b2_joints.yaml + b2_links.yaml,
+# which the launch passes alongside this file.
 /**:
   ros__parameters:
-    robot: b2
     command_topic: joint_commands
     joint_state_topic: joint_states
     contact_topic: foot_contacts
@@ -12,7 +14,7 @@
     kp: 1000.0
     kd: 10.0
     tau: 0.0
-    motor_mode: 10  # 0x0A PMSM servo (unitree_sdk2 b2_stand_example)
+    motor_mode: 10  # 0x0A PMSM servo
     command_timeout_sec: 0.5
     ramp_sec: 3.0
     # rt/lowstate foot_force is a raw sensor value; B2 feet read higher than Go2.
