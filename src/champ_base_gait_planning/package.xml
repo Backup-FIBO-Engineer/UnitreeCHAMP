@@ -1,12 +1,13 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>champ_base_gait_planning</name>
-  <version>0.1.0</version>
-  <description>CHAMP gait planning + IK/FK for XGO, Unitree Go2 and Unitree B2</description>
+  <version>0.2.0</version>
+  <description>Robot-agnostic CHAMP gait planning, IK/FK and odometry with a MuJoCo simulator and a Unitree rt/lowcmd DDS bridge. Robots (Unitree Go2, B2, XGO, ...) are defined only by urdf/&lt;robot&gt;.* and config/&lt;robot&gt;_*.yaml.</description>
   <maintainer email="fibo@todo.todo">fibo</maintainer>
   <license>BSD</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <depend>rclcpp</depend>
   <depend>champ</depend>
@@ -27,6 +28,13 @@
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>yaml_cpp_vendor</test_depend>
+  <test_depend>tinyxml2_vendor</test_depend>
+  <test_depend>urdfdom</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

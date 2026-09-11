@@ -1,13 +1,32 @@
 # champ_base_gait_planning
 
-CHAMP gait planning + IK/FK for the XGO quadruped (SolidWorks URDF),
-Unitree Go2 (official `go2_description` kinematics) and Unitree B2 (official
-`b2_description` kinematics from `unitree_ros`).
+CHAMP gait planning + IK/FK + odometry for quadrupeds, with a MuJoCo
+simulator and a Unitree `rt/lowcmd` / `rt/lowstate` DDS bridge (Sim2Real).
 
-XGO, Go2 and B2 share the same controller/estimator nodes. Each robot has its
-own URDF, gait yaml, launch files, and MuJoCo model. Go2 and B2 share one
-`unitree_dds_bridge` (`robot: go2|b2` in `config/<robot>_lowcmd.yaml`). Do not
-mix Unitree LowCmd with the Unitree Sport API.
+The code is **robot-agnostic**. Nothing in `src/`, `mujoco/mujoco_sim.py`,
+the launch files or the offline tools contains a joint name, link name, joint
+limit, leg length, gain or motor mode of a particular robot. Every robot is
+described only by files named after it inside this package:
+
+| File | Required | Content |
+|---|---|---|
+| `urdf/<robot>.urdf` or `urdf/<robot>.xacro` | yes | kinematics, inertials, joint limits / efforts / velocities |
+| `config/<robot>_gait.yaml` | yes | CHAMP `gait.*` (nominal_height, swing_height, stance_duration, max velocities, …) |
+| `config/<robot>_joints.yaml` | yes | CHAMP `joints_map.{left_front,right_front,left_hind,right_hind}` (hip, upper, lower joint names) |
+| `config/<robot>_links.yaml` | yes | CHAMP `links_map.*` leg chains + `links_map.base` + `links_map.imu` |
+| `config/<robot>_sim.yaml` | MuJoCo | `sim.*` simulator tuning (actuator gains, joint damping, friction, spawn clearance, velocity limit; foot geom/site names for hand-written models) |
+| `config/<robot>_lowcmd.yaml` | Sim2Real | `unitree_dds_bridge` parameters: `kp`, `kd`, `motor_mode`, `contact_force_threshold`, `ramp_sec`, topics |
+| `mujoco/<robot>.xml` | MuJoCo | MJCF model (generated from the URDF or hand-written) |
+| `rviz/<robot>_gait.rviz` | optional | RViz layout for the RViz launch |
+
+Every launch file takes `robot:=<name>`; the name is the stem of the file in
+`urdf/`. The package currently ships `go2` (Unitree Go2, official
+`go2_description`), `b2` (Unitree B2, official `unitree_ros` `b2_description`)
+and `xgo` (XGO SolidWorks export, no LowCmd).
+
+```bash
+python3 tools/champ_robot_files.py list      # robots found in urdf/
+```
 
 ## Pipeline
 
@@ -21,224 +40,126 @@ mix Unitree LowCmd with the Unitree Sport API.
    - Velocity estimation (`Odometry::getVelocities`)
    - Publishes `/odom/raw`, `/cmd_vel/estimated`, `/foot`
 
-## Verify kinematics / gait / odom (no ROS)
+Both nodes read the robot from the `urdf` parameter (the URDF text) plus the
+three CHAMP yamls. `champ::URDF::getPose` sums the joint `origin xyz` along the
+`links_map` chains, so every leg joint must have `rpy="0 0 0"`
+(`tools/verify_urdf_champ_contract.py` checks this).
 
-These checks use the same joint xyz as `urdf/xgo_rviz.xacro` (CHAMP's loader
-sums translations; that is exact here because every joint `rpy` is 0).
+3. **MuJoCo**: `mujoco/mujoco_sim.py` loads `mujoco/<robot>.xml`, reads the
+   joint order from `joints_map`, the base and IMU bodies from `links_map`, the
+   joint velocity limits from the URDF and the tuning from `sim.*`.
 
-```bash
-python3 tools/verify_urdf_champ_contract.py \
-  urdf/xgo_rviz.xacro config/xgo_links.yaml config/xgo_joints.yaml
-
-python3 tools/validate_mujoco_against_urdf.py urdf/xgo_rviz.xacro mujoco/xgo.xml
-python3 tools/verify_mujoco_physics.py mujoco/xgo.xml
-
-g++ -std=c++17 -O2 \
-  -I ../champ/include/champ \
-  -o /tmp/verify_champ_xgo tools/verify_champ_xgo.cpp
-/tmp/verify_champ_xgo
-```
-
-After a colcon build of this package, `colcon test --packages-select champ_base_gait_planning` runs the same checks.
-
-Lock files (URDF xyz + gait yaml) must match `tools/verify_champ_go2.cpp` /
-`tools/verify_champ_b2.cpp`:
-
-```bash
-python3 tools/verify_gait_yaml.py go2
-python3 tools/verify_gait_yaml.py b2
-bash tools/run_offline_checks.sh
-```
-
-Go2 (official URDF: hip `+X`, thigh/calf `+Y`, `rpy=0`, root link `base`):
-
-```bash
-python3 tools/verify_urdf_champ_contract.py \
-  urdf/go2.urdf config/go2_links.yaml config/go2_joints.yaml --preset go2
-
-python3 tools/validate_mujoco_against_urdf.py \
-  urdf/go2.urdf mujoco/go2.xml --robot go2
-python3 tools/verify_mujoco_physics.py mujoco/go2.xml
-
-g++ -std=c++17 -O2 \
-  -I ../champ/include/champ \
-  -o /tmp/verify_champ_go2 tools/verify_champ_go2.cpp
-/tmp/verify_champ_go2
-
-g++ -std=c++17 -O2 \
-  -I include \
-  -o /tmp/verify_unitree_lowcmd tools/verify_unitree_lowcmd.cpp src/motor_crc.cpp
-/tmp/verify_unitree_lowcmd
-```
-
-B2 (official URDF: hip `+X`, thigh/calf `+Y`, `rpy=0`, root link `base_link`,
-reach `0.35 + 0.35 = 0.70 m`, limits hip `±0.87`, thigh `[-0.94, 4.69]`,
-calf `[-2.82, -0.43]`):
-
-```bash
-python3 tools/verify_urdf_champ_contract.py \
-  urdf/b2.urdf config/b2_links.yaml config/b2_joints.yaml --preset b2
-
-python3 tools/validate_mujoco_against_urdf.py \
-  urdf/b2.urdf mujoco/b2.xml --robot b2
-python3 tools/verify_mujoco_physics.py mujoco/b2.xml
-python3 tools/verify_mujoco_walk.py --robot b2 0.35
-
-g++ -std=c++17 -O2 \
-  -I ../champ/include/champ \
-  -o /tmp/verify_champ_b2 tools/verify_champ_b2.cpp
-/tmp/verify_champ_b2
-```
+4. **Sim2Real**: `unitree_dds_bridge` maps CHAMP joints (LF, RF, LH, RH) to the
+   Unitree motor order (FR, FL, RR, RL × hip/thigh/calf) with `joints_map`,
+   clamps every target to the URDF `<limit lower upper>`, writes `rt/lowcmd`
+   with CRC and publishes `rt/lowstate` as `/joint_states`, `/foot_contacts`
+   (`foot_force >= contact_force_threshold`) and `/imu/data`
+   (`frame_id = links_map.imu`).
 
 ## Build
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash        # or your ROS 2 distro
 colcon build --packages-select champ champ_msgs champ_base_gait_planning
 source install/setup.bash
 ```
 
-## Run RViz test (XGO)
+Hardware Sim2Real also needs [unitree_sdk2](https://github.com/unitreerobotics/unitree_sdk2)
+(`-DCMAKE_PREFIX_PATH=/opt/unitree_robotics`) so `unitree_dds_bridge` is built.
+MuJoCo needs the `mujoco` Python package.
+
+## Run
+
+RViz kinematic walk (no physics, no LowCmd):
 
 ```bash
-ros2 launch champ_base_gait_planning rviz_gait_test.launch.py
-```
-
-## Run RViz test (Go2 / B2)
-
-Kinematic walk only. Does not start MuJoCo or LowCmd.
-
-```bash
-ros2 launch champ_base_gait_planning rviz_gait_test_go2.launch.py
-ros2 launch champ_base_gait_planning rviz_gait_test_b2.launch.py
-```
-
-Send velocity commands:
-
-```bash
-ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" -r 10
-```
-
-Compare estimated velocity:
-
-```bash
+ros2 launch champ_base_gait_planning rviz_gait_test.launch.py robot:=go2
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2}}" -r 10
 ros2 topic echo /cmd_vel/estimated
 ```
 
-## MuJoCo
-
-XGO:
+MuJoCo (`headless:=true` for no viewer):
 
 ```bash
-ros2 launch champ_base_gait_planning mujoco_sim.launch.py
-```
-
-Go2 (`mujoco/go2.xml`, root link `base`):
-
-```bash
-ros2 launch champ_base_gait_planning mujoco_sim_go2.launch.py
-```
-
-B2 (`mujoco/b2.xml`, root link `base_link`, ~74.6 kg incl. rotors/head/tail,
-position actuators kp 1000 / kv 20, hip kp 500, force limits 200/200/320 Nm):
-
-```bash
-ros2 launch champ_base_gait_planning mujoco_sim_b2.launch.py
-```
-
-Walk with teleop. Keep speed at **0.2–0.5 m/s** on Go2 (`gait.max_linear_velocity_x` is 0.50) and **0.2–0.6 m/s** on B2 (0.60). Press `i` to go forward. Do not mash `q` — teleop default already 0.5, and 1.5 m/s is silently clamped.
-
-```bash
+ros2 launch champ_base_gait_planning mujoco_sim.launch.py robot:=b2
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
-Regenerate the Go2/B2 MJCF after changing URDF translations:
+Keep teleop speed below `gait.max_linear_velocity_x` of the robot; CHAMP
+clamps anything above it silently.
+
+Real Unitree robot (Sport / motion services **off**, NIC cabled to the robot):
 
 ```bash
-python3 tools/generate_unitree_mjcf.py        # both
-python3 tools/generate_unitree_mjcf.py b2
+ros2 launch champ_base_gait_planning unitree_sim2real.launch.py robot:=go2 network_interface:=eth0
 ```
 
-## Go2 / B2 Sim2Real (Unitree DDS LowCmd)
+`unitree_lowcmd.launch.py robot:=<name>` starts only the bridge. The launch
+binds ROS 2 CycloneDDS to `lo` (`ros_loopback_dds:=false` to disable) so it
+does not share the robot NIC with unitree_sdk2. After `MotionSwitcher
+ReleaseMode` the bridge holds the measured pose, then ramps to the CHAMP
+targets over `ramp_sec` at `publish_rate`. If CHAMP commands stop for
+`command_timeout_sec`, the last pose is held with extra damping. Never mix this
+with the Sport API.
 
-Needs [unitree_sdk2](https://github.com/unitreerobotics/unitree_sdk2) so CMake
-can build `unitree_dds_bridge`. That node talks **native DDS** (`rt/lowcmd`,
-`rt/lowstate`, the `unitree_go` `LowCmd_`/`LowState_` IDL that Go2 and B2
-share), not ROS 2 `unitree_go` msgs and not the Sport API.
+`unitree_sdk2` ships its own CycloneDDS (`libddsc.so.0`) with the same soname
+as the ROS 2 `rmw_cyclonedds` copy; the bridge is linked with a `DT_RPATH` to
+the unitree_sdk2 lib directory. Check with
+`ldd $(ros2 pkg prefix champ_base_gait_planning)/lib/champ_base_gait_planning/unitree_dds_bridge | grep ddsc`.
 
-1. Ethernet to the robot, Sport / motion services **off** (the bridge calls
-   `MotionSwitcher ReleaseMode`).
-2. Install unitree_sdk2, then rebuild this package.
-3. Launch (replace `eth0` with the NIC that reaches the robot):
+## Offline checks (no ROS runtime)
 
 ```bash
-ros2 launch champ_base_gait_planning go2_sim2real.launch.py network_interface:=eth0
-ros2 launch champ_base_gait_planning b2_sim2real.launch.py network_interface:=eth0
+bash tools/run_offline_checks.sh            # every robot in urdf/
+bash tools/run_offline_checks.sh go2 b2     # selected robots
 ```
 
-The launch binds ROS 2 CycloneDDS to `lo` so it does not share the robot NIC
-with unitree_sdk2. After `ReleaseMode`, the bridge holds the measured pose
-(CRC on `LowCmd_`), then ramps from that pose to CHAMP commands over
-`ramp_sec` at 500 Hz. Every joint target is clamped to the URDF limits of the
-selected robot before it is written to `rt/lowcmd`. Measured `LowState_` is
-published as `/joint_states`, `/foot_contacts`, and `/imu/data` for odometry.
+Per robot this runs:
 
-Per-robot values come from `config/<robot>_lowcmd.yaml` (`robot:` selects the
-limit table and the default `motor_mode`):
+| Tool | Checks |
+|---|---|
+| `verify_urdf_champ_contract.py --robot R` | `links_map`/`joints_map` chains exist in the URDF, leg joints have `rpy=0`, hip axis `+X`, thigh/calf axes `+Y`, base/imu links exist, limits present, `nominal_height` inside the leg reach |
+| `verify_champ_robot <urdf> <gait> <joints> <links>` (C++) | CHAMP IK/FK round trip, gait at yaml limits, odometry sign/scale, leg symmetry |
+| `validate_mujoco_against_urdf.py --robot R` | MJCF bodies/joints/inertials/limits/actuators vs URDF |
+| `verify_mujoco_physics.py --robot R` | standing FK matches CHAMP, robot settles at `nominal_height`, feet in contact, IMU body |
+| `verify_mujoco_walk.py --robot R [vx]` | replayed CHAMP trot moves forward (>= 55 % of commanded) |
+| `verify_unitree_lowcmd <urdf> <joints>` (C++) | CHAMP↔Unitree motor index map, URDF limit clamp, CRC32 (only robots with `_lowcmd.yaml`) |
 
-| | Go2 | B2 |
-|---|---|---|
-| `motor_mode` | `1` (0x01) | `10` (0x0A) |
-| `kp` / `kd` | 40 / 1 | 1000 / 10 (unitree_sdk2 `b2_stand_example`) |
-| `ramp_sec` | 2.0 | 3.0 |
-| `contact_force_threshold` | 20 | 40 |
+`colcon test --packages-select champ_base_gait_planning` registers the same
+checks as ctest, one set per robot found in `urdf/`.
 
-If CHAMP commands stop, the last pose is held with extra damping.
+`tools/dump_champ_gait <urdf> <gait> <joints> <links> [vx vy wz ticks swing stance]`
+prints the CHAMP standing pose or a joint trajectory; the Python tools compile
+it on demand (`g++`, `pkg-config tinyxml2 yaml-cpp`).
 
-Do not mix this launch with Sport. It is not started by the RViz launch.
+## Adding a Unitree robot
 
-unitree_sdk2 ships its own CycloneDDS (`libddsc.so.0`, `libddscxx.so.0`) with
-the same soname as the ROS 2 `rmw_cyclonedds` copy. The bridge binary is
-linked with a `DT_RPATH` to the unitree_sdk2 lib directory so its SDK side
-always gets the matching CycloneDDS regardless of `LD_LIBRARY_PATH` order
-(the mismatch aborted with `free(): invalid pointer` as soon as `rt/lowstate`
-was discovered). Check with
-`ldd $(ros2 pkg prefix champ_base_gait_planning)/lib/champ_base_gait_planning/unitree_dds_bridge | grep ddsc`;
-both entries must point at the unitree_sdk2 install.
+No code changes. For a robot `<name>`:
 
-## Config
-
-XGO:
-
-- `config/xgo_rviz_gait.yaml` — gait parameters (nominal_height, swing_height, etc.)
-- `config/xgo_joints.yaml` — joint name mapping for CHAMP
-- `config/xgo_links.yaml` — link chain for URDF kinematics
-- `urdf/xgo_rviz.xacro` — XGO robot description
-
-Go2:
-
-- `config/go2_gait.yaml` — gait (nominal_height 0.30 m, swing 0.08 m, max vx 0.50)
-- `config/go2_joints.yaml` — `FL_*` / `FR_*` / `RL_*` / `RR_*`
-- `config/go2_links.yaml` — root link `base`
-- `config/go2_lowcmd.yaml` — Sim2Real `robot: go2`, kp/kd, ramp, `rt/lowcmd` rate
-- `urdf/go2.urdf` — official Unitree description, meshes under `meshes/Go2/`
-
-B2:
-
-- `config/b2_gait.yaml` — gait (nominal_height 0.50 m, swing 0.10 m, stance 0.30 s, max vx 0.60)
-- `config/b2_joints.yaml` — `FL_*` / `FR_*` / `RL_*` / `RR_*` (same names as Go2)
-- `config/b2_links.yaml` — root link `base_link`
-- `config/b2_lowcmd.yaml` — Sim2Real `robot: b2`, kp 1000 / kd 10, mode 0x0A, ramp 3 s
-- `urdf/b2.urdf` — official `unitree_ros` `b2_description`, meshes under `meshes/B2/`
-  (the four identical `*_calf.dae` are shared as one `calf.dae`)
+1. `urdf/<name>.urdf` — the official `<name>_description` URDF (meshes under
+   `meshes/`). Leg joints in hip → thigh → calf → foot order per leg, all with
+   `rpy="0 0 0"`, and `<limit lower upper effort velocity>` on every leg joint.
+2. `config/<name>_joints.yaml` — `joints_map.left_front: [FL_hip_joint, FL_thigh_joint, FL_calf_joint]` etc.
+3. `config/<name>_links.yaml` — `links_map.left_front: [FL_hip, FL_thigh, FL_calf, FL_foot]` etc.,
+   `links_map.base: <root link>`, `links_map.imu: <imu link>`.
+4. `config/<name>_gait.yaml` — start from `go2_gait.yaml` / `b2_gait.yaml` and scale
+   `nominal_height`, `swing_height`, `stance_duration`, `max_linear_velocity_*`.
+5. `config/<name>_lowcmd.yaml` — `kp`, `kd`, `motor_mode` and
+   `contact_force_threshold` from the unitree_sdk2 `<name>_stand_example`.
+6. `config/<name>_sim.yaml` + `python3 tools/generate_mjcf.py <name>` → `mujoco/<name>.xml`
+   (URDF feet must be sphere collisions; otherwise hand-write the MJCF and list
+   `sim.foot_geom_names` / `sim.foot_site_names` as `xgo_sim.yaml` does).
+7. Optional `rviz/<name>_gait.rviz`.
+8. `bash tools/run_offline_checks.sh <name>`.
 
 ## Topics
 
 | Topic | Type | Direction |
 |-------|------|-----------|
 | `/cmd_vel` | `geometry_msgs/Twist` | in |
-| `/joint_states` | `sensor_msgs/JointState` | out (controller) |
-| `/foot_contacts` | `champ_msgs/ContactsStamped` | out (controller) |
+| `/joint_states` | `sensor_msgs/JointState` | out (controller, or bridge/sim measured) |
+| `/foot_contacts` | `champ_msgs/ContactsStamped` | out |
+| `/imu/data` | `sensor_msgs/Imu` | out (bridge / sim) |
 | `/cmd_vel/estimated` | `geometry_msgs/Twist` | out (estimator) |
 | `/odom/raw` | `nav_msgs/Odometry` | out (estimator) |
 | `/foot` | `visualization_msgs/MarkerArray` | out (estimator) |

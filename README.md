@@ -1,65 +1,74 @@
-# B2CHAMP
+# UnitreeUniversalCHAMP
 
-CHAMP gait / IK / odometry for Unitree B2 (branch `B2EDU`, converted from the
-Go2 branch `Go2EDU`; the Go2 files stay in the package). This branch contains only:
+CHAMP gait / IK / odometry, MuJoCo simulation and Unitree LowCmd Sim2Real for
+Unitree quadrupeds (branch `UnitreeUniversalCHAMP`, merged from `Go2EDU` and
+`B2EDU`). The workspace contains:
 
 - `src/champ` — kinematics, leg controller, odometry (headers)
 - `src/champ_msgs` — `ContactsStamped`
-- `src/champ_base_gait_planning` — ROS 2 nodes, B2/Go2 URDF, MuJoCo, Sim2Real DDS
+- `src/champ_base_gait_planning` — ROS 2 nodes, robot descriptions, MuJoCo, Sim2Real DDS bridge
 
-B2 numbers (official `b2_description`): hip `(±0.3285, ±0.072, 0)`, thigh
-`0.11973`, calf/foot `0.35 + 0.35 = 0.70 m` reach, root link `base_link`,
-joint limits hip `±0.87`, thigh `[-0.94, 4.69]`, calf `[-2.82, -0.43]`.
-CHAMP stands at `nominal_height 0.50` (thigh `0.775`, calf `-1.550`).
+One code base drives every robot. Robot-specific values live only in the files
+named after the robot inside `src/champ_base_gait_planning`
+(`urdf/<robot>.urdf`, `config/<robot>_{gait,joints,links,sim,lowcmd}.yaml`,
+`mujoco/<robot>.xml`, `rviz/<robot>_gait.rviz`); the nodes, launch files and
+tools read joint names, limits, leg geometry, gains and motor mode from them.
+Shipped robots: `go2`, `b2` (both with LowCmd) and `xgo` (sim/RViz only).
+See `src/champ_base_gait_planning/README.md` for the file contract and how to
+add another Unitree robot without touching code.
 
 ## Build
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build --packages-select champ champ_msgs champ_base_gait_planning
 source install/setup.bash
 ```
 
-Hardware Sim2Real also needs [unitree_sdk2](https://github.com/unitreerobotics/unitree_sdk2) so `unitree_dds_bridge` is compiled.
+Hardware Sim2Real also needs [unitree_sdk2](https://github.com/unitreerobotics/unitree_sdk2)
+(`--cmake-args -DCMAKE_PREFIX_PATH=/opt/unitree_robotics`) so `unitree_dds_bridge` is compiled.
 
-## Verify (no ROS)
+## Verify (no ROS runtime)
 
 ```bash
-bash src/champ_base_gait_planning/tools/run_offline_checks.sh
+bash src/champ_base_gait_planning/tools/run_offline_checks.sh          # all robots
+bash src/champ_base_gait_planning/tools/run_offline_checks.sh go2 b2   # selected robots
 ```
 
-This checks URDF→CHAMP xyz, gait yaml lock, IK/FK, gait at yaml limits, odometry sign/scale, MuJoCo standing FK, and a forward-walk tracking check for both B2 and Go2.
+Per robot: URDF→CHAMP contract, IK/FK, gait at yaml limits, odometry
+sign/scale, MuJoCo model vs URDF, MuJoCo standing FK, forward-walk tracking,
+and (robots with `_lowcmd.yaml`) the Unitree motor map, URDF limit clamp and CRC.
+`colcon test --packages-select champ_base_gait_planning` runs the same checks.
 
 ## Run
 
 RViz kinematic walk:
 
 ```bash
-ros2 launch champ_base_gait_planning rviz_gait_test_b2.launch.py
+ros2 launch champ_base_gait_planning rviz_gait_test.launch.py robot:=b2
 ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.3, y: 0.0, z: 0.0}, angular: {z: 0.0}}" -r 10
 ```
 
 MuJoCo:
 
 ```bash
-ros2 launch champ_base_gait_planning mujoco_sim_b2.launch.py
+ros2 launch champ_base_gait_planning mujoco_sim.launch.py robot:=b2     # or robot:=go2 / robot:=xgo
+./run_mujoco.sh b2
 ```
 
-Teleop: keep speed 0.2–0.6 m/s, press `i` for forward. CHAMP clamps to
-`gait.max_linear_velocity_x` (0.60 for B2).
+Teleop: keep the speed below `gait.max_linear_velocity_x` of the robot
+(`config/<robot>_gait.yaml`); CHAMP clamps anything above it.
 
-Real B2 (Sport off, NIC toward the robot):
+Real robot (Sport off, NIC toward the robot):
 
 ```bash
-ros2 launch champ_base_gait_planning b2_sim2real.launch.py network_interface:=eth0
+ros2 launch champ_base_gait_planning unitree_sim2real.launch.py robot:=b2 network_interface:=eth0
+ros2 launch champ_base_gait_planning unitree_sim2real.launch.py robot:=go2 network_interface:=eth0
 ```
 
 The bridge publishes Unitree DDS `rt/lowcmd` (`LowCmd_`, CRC, motor order
-FR/FL/RR/RL, motor mode `0x0A`, kp 1000 / kd 10 as in the unitree_sdk2
-`b2_stand_example`) and reads `rt/lowstate`. Joint targets are clamped to the
-B2 URDF limits before they leave the bridge. Stand with Sport first; the launch
-releases Sport and holds pose, then ramps into CHAMP over 3 s. Do not mix with
-the Sport API.
-
-Go2 launches (`*_go2.launch.py`, `go2_sim2real.launch.py`) are unchanged and use
-the same `unitree_dds_bridge` with `config/go2_lowcmd.yaml` (`robot: go2`).
+FR/FL/RR/RL) with the `kp` / `kd` / `motor_mode` from
+`config/<robot>_lowcmd.yaml`, clamps every joint target to the URDF limits of
+the selected robot, and reads `rt/lowstate`. Stand with Sport first; the launch
+releases Sport and holds the pose, then ramps into CHAMP over `ramp_sec`. Do not
+mix with the Sport API.
