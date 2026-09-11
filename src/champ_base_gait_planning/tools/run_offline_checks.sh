@@ -1,44 +1,113 @@
 #!/usr/bin/env bash
+# Offline (no ROS runtime) checks for every robot described in this package,
+# or only for the robots given on the command line:
+#
+#   bash tools/run_offline_checks.sh            # all robots in urdf/
+#   bash tools/run_offline_checks.sh go2 b2     # selected robots
+#
+# A robot is urdf/<robot>.urdf|.xacro + config/<robot>_{gait,joints,links}.yaml.
+# MuJoCo checks run when mujoco/<robot>.xml exists, the LowCmd check when
+# config/<robot>_lowcmd.yaml exists. Needs python3 (numpy, PyYAML, mujoco),
+# g++, pkg-config, tinyxml2 and yaml-cpp dev packages. verify_unitree_lowcmd
+# also needs urdfdom (found through pkg-config or a sourced ROS 2 prefix) and
+# is skipped with a warning otherwise.
 set -euo pipefail
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CHAMP_INCLUDE="${ROOT}/../champ/include/champ"
-cd "$ROOT"
+TOOLS="${ROOT}/tools"
+CHAMP_INCLUDE="${CHAMP_INCLUDE:-${ROOT}/../champ/include/champ}"
+BUILD_DIR="${CHAMP_OFFLINE_BUILD_DIR:-/tmp/champ_offline_checks}"
+mkdir -p "${BUILD_DIR}"
+cd "${ROOT}"
 
-python3 tools/verify_urdf_champ_contract.py \
-  urdf/xgo_rviz.xacro config/xgo_links.yaml config/xgo_joints.yaml
-python3 tools/verify_urdf_champ_contract.py \
-  urdf/go2.urdf config/go2_links.yaml config/go2_joints.yaml --preset go2
-python3 tools/verify_urdf_champ_contract.py \
-  urdf/b2.urdf config/b2_links.yaml config/b2_joints.yaml --preset b2
-python3 tools/verify_gait_yaml.py go2
-python3 tools/verify_gait_yaml.py b2
-python3 tools/validate_mujoco_against_urdf.py urdf/xgo_rviz.xacro mujoco/xgo.xml
-python3 tools/validate_mujoco_against_urdf.py urdf/go2.urdf mujoco/go2.xml --robot go2
-python3 tools/validate_mujoco_against_urdf.py urdf/b2.urdf mujoco/b2.xml --robot b2
-python3 tools/verify_mujoco_physics.py mujoco/xgo.xml
-python3 tools/verify_mujoco_physics.py mujoco/go2.xml
-python3 tools/verify_mujoco_physics.py mujoco/b2.xml
-python3 tools/verify_mujoco_walk.py --robot go2 0.35
-python3 tools/verify_mujoco_walk.py --robot b2 0.35
+if [ $# -gt 0 ]; then
+  ROBOTS=("$@")
+else
+  mapfile -t ROBOTS < <(python3 "${TOOLS}/champ_robot_files.py" list "${ROOT}")
+fi
+if [ ${#ROBOTS[@]} -eq 0 ]; then
+  echo "no robots found in ${ROOT}/urdf" >&2
+  exit 1
+fi
 
-g++ -std=c++17 -O2 -I "$CHAMP_INCLUDE" -o /tmp/verify_champ_xgo tools/verify_champ_xgo.cpp
-/tmp/verify_champ_xgo
-g++ -std=c++17 -O2 -I "$CHAMP_INCLUDE" -o /tmp/verify_champ_go2 tools/verify_champ_go2.cpp
-/tmp/verify_champ_go2
-g++ -std=c++17 -O2 -I "$CHAMP_INCLUDE" -o /tmp/verify_champ_b2 tools/verify_champ_b2.cpp
-/tmp/verify_champ_b2
-g++ -std=c++17 -O2 -I include -o /tmp/verify_unitree_lowcmd \
-  tools/verify_unitree_lowcmd.cpp src/motor_crc.cpp
-/tmp/verify_unitree_lowcmd
-python3 - <<'PY'
-from pathlib import Path
-fails = 0
-for robot, mode, hexmode in (("go2", "1", "0x01"), ("b2", "10", "0x0A")):
-    text = Path(f"config/{robot}_lowcmd.yaml").read_text()
-    ok = f"motor_mode: {mode}" in text and f"robot: {robot}" in text
-    print(f"[{'PASS' if ok else 'FAIL'}] {robot}_lowcmd robot={robot}, motor_mode {hexmode} (sdk2 stand example)")
-    fails += 0 if ok else 1
-raise SystemExit(1 if fails else 0)
-PY
+step() { echo; echo "=== $* ==="; }
 
-echo "All offline checks passed."
+# --- compile the C++ tools once ---------------------------------------------
+step "compile C++ tools"
+CXXFLAGS_COMMON=(-std=c++17 -O2 -I "${CHAMP_INCLUDE}" -I "${TOOLS}")
+XML_YAML_CFLAGS=($(pkg-config --cflags tinyxml2 yaml-cpp))
+XML_YAML_LIBS=($(pkg-config --libs tinyxml2 yaml-cpp))
+g++ "${CXXFLAGS_COMMON[@]}" "${XML_YAML_CFLAGS[@]}" \
+  -o "${BUILD_DIR}/verify_champ_robot" tools/verify_champ_robot.cpp "${XML_YAML_LIBS[@]}"
+g++ "${CXXFLAGS_COMMON[@]}" "${XML_YAML_CFLAGS[@]}" \
+  -o "${BUILD_DIR}/dump_champ_gait" tools/dump_champ_gait.cpp "${XML_YAML_LIBS[@]}"
+
+LOWCMD_BIN=""
+URDFDOM_CFLAGS=()
+URDFDOM_LIBS=()
+if pkg-config --exists urdfdom 2>/dev/null; then
+  URDFDOM_CFLAGS=($(pkg-config --cflags urdfdom))
+  URDFDOM_LIBS=($(pkg-config --libs urdfdom))
+elif [ -n "${AMENT_PREFIX_PATH:-}" ]; then
+  for prefix in ${AMENT_PREFIX_PATH//:/ }; do
+    if [ -d "${prefix}/include/urdfdom" ]; then
+      URDFDOM_CFLAGS=(-I "${prefix}/include/urdfdom" -I "${prefix}/include/urdfdom_headers")
+      libdir="$(dirname "$(find "${prefix}/lib" -name 'liburdfdom_model.so*' | head -n1)")"
+      URDFDOM_LIBS=(-L "${libdir}" -Wl,-rpath,"${libdir}" -lurdfdom_model)
+      break
+    fi
+  done
+fi
+if [ ${#URDFDOM_LIBS[@]} -gt 0 ]; then
+  g++ -std=c++17 -O2 -I include "${URDFDOM_CFLAGS[@]}" $(pkg-config --cflags yaml-cpp) \
+    -o "${BUILD_DIR}/verify_unitree_lowcmd" tools/verify_unitree_lowcmd.cpp src/motor_crc.cpp \
+    "${URDFDOM_LIBS[@]}" $(pkg-config --libs yaml-cpp)
+  LOWCMD_BIN="${BUILD_DIR}/verify_unitree_lowcmd"
+else
+  echo "[WARN] urdfdom not found (pkg-config or sourced ROS prefix); LowCmd checks are skipped"
+fi
+
+# --- per-robot checks --------------------------------------------------------
+for robot in "${ROBOTS[@]}"; do
+  gait="config/${robot}_gait.yaml"
+  joints="config/${robot}_joints.yaml"
+  links="config/${robot}_links.yaml"
+  if [ -f "urdf/${robot}.urdf" ]; then
+    urdf="urdf/${robot}.urdf"
+  elif [ -f "urdf/${robot}.xacro" ]; then
+    urdf="${BUILD_DIR}/${robot}.urdf"
+    python3 "${TOOLS}/champ_robot_files.py" expand "urdf/${robot}.xacro" "${urdf}"
+  else
+    echo "unknown robot '${robot}' (no urdf/${robot}.urdf or .xacro)" >&2
+    exit 1
+  fi
+
+  step "${robot}: URDF -> CHAMP contract"
+  python3 tools/verify_urdf_champ_contract.py --robot "${robot}"
+
+  step "${robot}: CHAMP IK/FK/gait/odometry"
+  "${BUILD_DIR}/verify_champ_robot" "${urdf}" "${gait}" "${joints}" "${links}"
+
+  if [ -f "mujoco/${robot}.xml" ]; then
+    step "${robot}: MuJoCo model vs URDF"
+    python3 tools/validate_mujoco_against_urdf.py --robot "${robot}"
+    step "${robot}: MuJoCo standing physics"
+    python3 tools/verify_mujoco_physics.py --robot "${robot}"
+    step "${robot}: MuJoCo forward walk"
+    python3 tools/verify_mujoco_walk.py --robot "${robot}"
+  else
+    echo "[INFO] ${robot}: no mujoco/${robot}.xml, MuJoCo checks skipped"
+  fi
+
+  if [ -f "config/${robot}_lowcmd.yaml" ]; then
+    if [ -n "${LOWCMD_BIN}" ]; then
+      step "${robot}: Unitree LowCmd mapping"
+      "${LOWCMD_BIN}" "${urdf}" "${joints}"
+    else
+      echo "[WARN] ${robot}: verify_unitree_lowcmd skipped (urdfdom missing)"
+    fi
+  fi
+done
+
+echo
+echo "All offline checks passed for: ${ROBOTS[*]}"

@@ -1,144 +1,39 @@
 #!/usr/bin/env python3
-"""Comprehensive static checker for a robot URDF/Xacro versus MuJoCo MJCF (XGO, Go2, B2)."""
+"""Static checker: robot URDF versus its MuJoCo MJCF, for any robot in this package.
+
+    validate_mujoco_against_urdf.py --robot <robot> [--xml path]
+
+The MJCF is compiled with MuJoCo and compared body by body against the URDF:
+  * every URDF link on the CHAMP leg chains (links_map) and the base/IMU links
+    exist as bodies, their kinematic offsets at q=0 match the URDF joint
+    origins (sum of xyz, the same quantity CHAMP uses), joint axes and ranges
+    match, actuators are position servos with ctrlrange = URDF limits and
+    forcerange = URDF effort;
+  * explicit inertials (mass, COM, principal inertia) match the URDF for every
+    link that has one in both files;
+  * URDF collision primitives (box/cylinder/sphere) that exist as geoms named
+    <link>_collision[_n] match in type, size and pose; mesh collisions are
+    reported and skipped.
+Requires the `mujoco` Python package. Does not need ROS.
+"""
 
 from __future__ import annotations
 
 import argparse
 import math
-import xml.etree.ElementTree as ET
+import sys
 from pathlib import Path
 from typing import Dict
 
 import numpy as np
 
-REVOLUTE_JOINTS = [
-    'lf_hip_joint', 'lf_upper_leg_joint', 'lf_lower_leg_joint',
-    'rf_hip_joint', 'rf_upper_leg_joint', 'rf_lower_leg_joint',
-    'lh_hip_joint', 'lh_upper_leg_joint', 'lh_lower_leg_joint',
-    'rh_hip_joint', 'rh_upper_leg_joint', 'rh_lower_leg_joint',
-]
-FIXED_PAYLOAD_LINKS = ('camera_link', 'laser_link', 'imu_link')
-LEGS = ('lf', 'rf', 'lh', 'rh')
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-UNITREE_JOINTS = [
-    'FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint',
-    'FR_hip_joint', 'FR_thigh_joint', 'FR_calf_joint',
-    'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint',
-    'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint',
-]
-
-# Unitree robots: MJCF collision is a box for the trunk (half sizes from the URDF
-# collision box) and the IMU is a massless marker body, so its inertial is not compared.
-UNITREE = {
-    'go2': {
-        'base_link': 'base',
-        'imu_link': 'imu',
-        'base_half_size': np.array([0.1881, 0.04675, 0.057]),
-    },
-    'b2': {
-        'base_link': 'base_link',
-        'imu_link': 'imu_link',
-        'base_half_size': np.array([0.25, 0.14, 0.075]),
-    },
-}
-
-
-def vec(text: str) -> np.ndarray:
-    return np.array([float(value) for value in text.split()], dtype=float)
-
-
-def close(a: np.ndarray, b: np.ndarray, tolerance: float = 1e-9) -> bool:
-    return bool(np.allclose(a, b, atol=tolerance, rtol=0.0))
-
-
-def parent_map(root: ET.Element) -> Dict[ET.Element, ET.Element]:
-    return {child: parent for parent in root.iter() for child in parent}
-
-
-def parse_urdf(path: Path):
-    root = ET.parse(path).getroot()
-    joints = {}
-    links = {}
-    for joint in root.findall('joint'):
-        origin = joint.find('origin')
-        axis = joint.find('axis')
-        joints[joint.attrib['name']] = {
-            'type': joint.attrib['type'],
-            'origin': vec(origin.attrib.get('xyz', '0 0 0')),
-            'rpy': vec(origin.attrib.get('rpy', '0 0 0')),
-            'axis': vec(axis.attrib.get('xyz', '0 0 0')) if axis is not None else np.zeros(3),
-            'parent': joint.find('parent').attrib['link'],
-            'child': joint.find('child').attrib['link'],
-            'limit': joint.find('limit').attrib if joint.find('limit') is not None else {},
-        }
-    for link in root.findall('link'):
-        inertial = link.find('inertial')
-        if inertial is None:
-            continue
-        inertia = inertial.find('inertia').attrib
-        links[link.attrib['name']] = {
-            'mass': float(inertial.find('mass').attrib['value']),
-            'com': vec(inertial.find('origin').attrib.get('xyz', '0 0 0')),
-            'rpy': vec(inertial.find('origin').attrib.get('rpy', '0 0 0')),
-            'fullinertia': np.array([
-                float(inertia['ixx']), float(inertia['iyy']), float(inertia['izz']),
-                float(inertia['ixy']), float(inertia['ixz']), float(inertia['iyz']),
-            ]),
-        }
-    return joints, links
-
-
-def parse_inertial(inertial: ET.Element) -> Dict[str, np.ndarray]:
-    if 'fullinertia' in inertial.attrib:
-        full = vec(inertial.attrib['fullinertia'])
-    else:
-        diag = vec(inertial.attrib['diaginertia'])
-        full = np.array([diag[0], diag[1], diag[2], 0.0, 0.0, 0.0])
-    return {
-        'mass': float(inertial.attrib['mass']),
-        'com': vec(inertial.attrib.get('pos', '0 0 0')),
-        'fullinertia': full,
-    }
-
-
-def parse_mjcf(path: Path, revolute_joints):
-    root = ET.parse(path).getroot()
-    parents = parent_map(root)
-    bodies = {body.attrib['name']: body for body in root.findall('.//body') if 'name' in body.attrib}
-    joints = {}
-    inertials = {}
-    for name, body in bodies.items():
-        inertial = body.find('inertial')
-        if inertial is not None:
-            inertials[name] = parse_inertial(inertial)
-    for joint in root.findall('.//joint'):
-        name = joint.attrib.get('name')
-        if name not in revolute_joints:
-            continue
-        body = parents[joint]
-        parent_element = parents[body]
-        joints[name] = {
-            'origin': vec(body.attrib.get('pos', '0 0 0')) + vec(joint.attrib.get('pos', '0 0 0')),
-            'axis': vec(joint.attrib.get('axis', '0 0 1')),
-            'range': vec(joint.attrib['range']),
-            'body': body.attrib['name'],
-            'parent': parent_element.attrib.get('name') if parent_element.tag == 'body' else None,
-        }
-    actuators = root.findall('./actuator/position')
-    return root, bodies, joints, inertials, actuators, parents
-
-
-def inertia_matrix(full: np.ndarray) -> np.ndarray:
-    ixx, iyy, izz, ixy, ixz, iyz = full
-    return np.array([[ixx, ixy, ixz], [ixy, iyy, iyz], [ixz, iyz, izz]])
-
-
-def expected_limit(value: str) -> float:
-    if value == '${pi}':
-        return math.pi
-    if value == '${-pi}':
-        return -math.pi
-    return float(value)
+from champ_robot_files import (  # noqa: E402
+    CHAIN_LENGTH, LEGS, SOURCE_PACKAGE_DIR, Urdf, champ_joint_names, foot_geom_names,
+    foot_site_names, inertia_matrix, leg_chains, load_ros_params, load_urdf,
+    resolve_robot_files, rpy_to_matrix,
+)
 
 
 def result(label: str, ok: bool, detail: str = '') -> int:
@@ -146,151 +41,224 @@ def result(label: str, ok: bool, detail: str = '') -> int:
     return 0 if ok else 1
 
 
+def close(a, b, tol: float = 1e-9) -> bool:
+    return bool(np.allclose(np.asarray(a, dtype=float), np.asarray(b, dtype=float), atol=tol, rtol=0.0))
+
+
+def quat_to_matrix(q: np.ndarray) -> np.ndarray:
+    w, x, y, z = q
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ])
+
+
+def urdf_world_pose(urdf: Urdf, link: str):
+    """Position/rotation of a link frame in the root frame at q=0 (fixed + hinge joints)."""
+    pos = np.zeros(3)
+    rot = np.eye(3)
+    chain = []
+    current = link
+    while current != urdf.root:
+        joint = urdf.parent_joint[current]
+        chain.append(joint)
+        current = joint.parent
+    for joint in reversed(chain):
+        pos = pos + rot @ joint.xyz
+        rot = rot @ rpy_to_matrix(joint.rpy)
+    return pos, rot
+
+
 def main() -> int:
+    try:
+        import mujoco
+    except ImportError:
+        print('SKIP: mujoco Python package is not installed')
+        return 0
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('urdf_xacro', type=Path)
-    parser.add_argument('mujoco_xml', type=Path)
-    parser.add_argument('--robot', choices=('xgo',) + tuple(sorted(UNITREE)), default='xgo')
+    parser.add_argument('--robot', required=True)
+    parser.add_argument('--package-dir', type=Path, default=SOURCE_PACKAGE_DIR)
+    parser.add_argument('--xml', type=Path, default=None)
     args = parser.parse_args()
 
-    unitree = UNITREE.get(args.robot)
-    if unitree is not None:
-        revolute_joints = UNITREE_JOINTS
-        payload_links = (unitree['imu_link'],)
-        base_link = unitree['base_link']
-        legs = ('FL', 'FR', 'RL', 'RR')
-    else:
-        revolute_joints = REVOLUTE_JOINTS
-        payload_links = FIXED_PAYLOAD_LINKS
-        base_link = 'base_link'
-        legs = LEGS
+    files = resolve_robot_files(args.package_dir, args.robot)
+    xml_path = args.xml or files.mujoco_xml
+    if xml_path is None:
+        print(f'FAIL: robot {args.robot!r} has no mujoco/{args.robot}.xml')
+        return 1
+    params = load_ros_params(*files.champ_yamls())
+    sim = files.sim_params()
+    urdf = load_urdf(files.urdf)
+    links = leg_chains(params, 'links_map')
+    joints_map = leg_chains(params, 'joints_map')
+    joint_names = champ_joint_names(params)
+    base_link = str(params['links_map']['base'])
+    imu_link = str(params['links_map']['imu'])
 
-    urdf_joints, urdf_links = parse_urdf(args.urdf_xacro)
-    root, bodies, mj_joints, mj_inertials, actuators, parents = parse_mjcf(
-        args.mujoco_xml, revolute_joints
-    )
+    model = mujoco.MjModel.from_xml_path(str(xml_path))
+    data = mujoco.MjData(model)
+    mujoco.mj_resetData(model, data)
+    root_jnt = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, 'root')
+    root_q = int(model.jnt_qposadr[root_jnt])
+    data.qpos[:] = 0.0
+    data.qpos[root_q + 3] = 1.0
+    mujoco.mj_forward(model, data)
     failures = 0
 
-    failures += result('12 revolute joints present', set(mj_joints) == set(revolute_joints))
+    def body_id(name: str) -> int:
+        return int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name))
 
-    actuator_names = [a.attrib.get('name') for a in actuators]
-    actuator_joints = [a.attrib.get('joint') for a in actuators]
-    failures += result('12 position actuators present', len(actuators) == 12)
-    failures += result('actuator names are unique', len(set(actuator_names)) == len(actuator_names))
-    failures += result(
-        'actuator joint mapping',
-        actuator_names == revolute_joints and actuator_joints == revolute_joints,
-    )
+    failures += result('links_map.base is the URDF root', base_link == urdf.root, f'{base_link} vs {urdf.root}')
+    failures += result('base body carries the free joint', body_id(base_link) == int(model.jnt_bodyid[root_jnt]))
 
-    for name in revolute_joints:
-        uj = urdf_joints[name]
-        mj = mj_joints.get(name)
-        if mj is None:
-            failures += result(f'{name} exists', False)
+    # -- leg chains: bodies, joints, axes, ranges ---------------------------------------
+    # Foot links are fixed to the lower leg; a hand-written MJCF may fold them into the
+    # lower-leg body (only the foot site/geom is required, checked below).
+    required_links = [base_link, imu_link] + [name for leg in LEGS for name in links[leg][:CHAIN_LENGTH - 1]]
+    for link in required_links:
+        failures += result(f'body {link} exists', body_id(link) >= 0)
+    if any(body_id(l) < 0 for l in required_links):
+        print(f'\nResult: {failures} failed checks')
+        return 1
+    compared_links = list(required_links)
+    for leg in LEGS:
+        foot = links[leg][CHAIN_LENGTH - 1]
+        if body_id(foot) >= 0:
+            compared_links.append(foot)
+        else:
+            print(f'[INFO] foot link {foot} has no MJCF body (folded into {links[leg][CHAIN_LENGTH - 2]})')
+
+    for link in compared_links:
+        if link == base_link:
             continue
-        failures += result(f'{name} parent', mj['parent'] == uj['parent'], f"urdf={uj['parent']} mjcf={mj['parent']}")
-        failures += result(f'{name} child body', mj['body'] == uj['child'], f"urdf={uj['child']} mjcf={mj['body']}")
-        failures += result(f'{name} origin', close(uj['origin'], mj['origin']), f"urdf={uj['origin']} mjcf={mj['origin']}")
-        failures += result(f'{name} axis', close(uj['axis'], mj['axis']), f"urdf={uj['axis']} mjcf={mj['axis']}")
-        expected_range = np.array([
-            expected_limit(uj['limit']['lower']), expected_limit(uj['limit']['upper'])
-        ])
-        failures += result(f'{name} range', close(expected_range, mj['range'], 1e-15), f"urdf={expected_range} mjcf={mj['range']}")
+        urdf_pos, urdf_rot = urdf_world_pose(urdf, link)
+        bid = body_id(link)
+        mj_pos = data.xpos[bid] - data.xpos[body_id(base_link)]
+        mj_rot = data.xmat[bid].reshape(3, 3)
+        failures += result(f'{link} frame origin at q=0', close(urdf_pos, mj_pos, 1e-9), f'urdf={urdf_pos} mjcf={mj_pos}')
+        failures += result(f'{link} frame rotation at q=0', close(urdf_rot, mj_rot, 1e-9))
+        # Direct kinematic parent (skipping nothing): MuJoCo bodies map 1:1 to URDF links.
+        urdf_parent = urdf.parent_joint[link].parent
+        mj_parent = model.body(int(model.body_parentid[bid])).name
+        failures += result(f'{link} parent body', mj_parent == urdf_parent, f'urdf={urdf_parent} mjcf={mj_parent}')
 
-        link = uj['child']
-        ui = urdf_links[link]
-        mi = mj_inertials.get(link)
-        if mi is None:
-            failures += result(f'{link} explicit inertial', False)
+    for leg in LEGS:
+        for i in range(CHAIN_LENGTH):
+            jname = joints_map[leg][i]
+            uj = urdf.joints[jname]
+            failures += result(f'{jname} drives {links[leg][i]} in the URDF', uj.child == links[leg][i])
+            jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, jname)
+            if i < CHAIN_LENGTH - 1:
+                failures += result(f'{jname} hinge exists', jid >= 0 and model.jnt_type[jid] == mujoco.mjtJoint.mjJNT_HINGE)
+                if jid < 0:
+                    continue
+                failures += result(f'{jname} on body {uj.child}', model.body(int(model.jnt_bodyid[jid])).name == uj.child)
+                failures += result(f'{jname} axis', close(model.jnt_axis[jid], uj.axis, 1e-12), f"urdf={uj.axis} mjcf={model.jnt_axis[jid]}")
+                failures += result(f'{jname} anchored at body origin', close(model.jnt_pos[jid], [0, 0, 0], 1e-12))
+                if 'lower' in uj.limit and 'upper' in uj.limit:
+                    expected = np.array([float(uj.limit['lower']), float(uj.limit['upper'])])
+                    failures += result(f'{jname} range', bool(model.jnt_limited[jid]) and close(expected, model.jnt_range[jid], 1e-12), f'urdf={expected} mjcf={model.jnt_range[jid]}')
+            else:
+                failures += result(f'{jname} is fixed (no MuJoCo joint)', uj.type == 'fixed' and jid < 0)
+
+    # -- actuators -----------------------------------------------------------------------
+    failures += result('12 actuators', model.nu == 12, f'nu={model.nu}')
+    for jname in joint_names:
+        aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, jname)
+        if aid < 0:
+            failures += result(f'actuator {jname} exists', False)
             continue
-        failures += result(f'{link} mass', math.isclose(ui['mass'], mi['mass'], abs_tol=1e-12), f"urdf={ui['mass']:.15g} mjcf={mi['mass']:.15g}")
-        failures += result(f'{link} COM', close(ui['com'], mi['com'], 1e-12))
-        failures += result(f'{link} inertia', close(ui['fullinertia'], mi['fullinertia'], 1e-15))
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, jname)
+        failures += result(f'actuator {jname} drives joint {jname}', model.actuator_trntype[aid] == mujoco.mjtTrn.mjTRN_JOINT and int(model.actuator_trnid[aid, 0]) == jid)
+        kp = float(model.actuator_gainprm[aid, 0])
+        failures += result(f'actuator {jname} is a position servo', kp > 0 and math.isclose(model.actuator_biasprm[aid, 1], -kp, rel_tol=1e-9) and model.actuator_biasprm[aid, 2] <= 0.0, f'kp={kp} bias={model.actuator_biasprm[aid, :3]}')
+        uj = urdf.joints[jname]
+        if 'lower' in uj.limit and 'upper' in uj.limit:
+            expected = np.array([float(uj.limit['lower']), float(uj.limit['upper'])])
+            failures += result(f'actuator {jname} ctrlrange = URDF limits', bool(model.actuator_ctrllimited[aid]) and close(expected, model.actuator_ctrlrange[aid], 1e-12), f'{model.actuator_ctrlrange[aid]}')
+        if 'effort' in uj.limit:
+            effort = float(uj.limit['effort'])
+            failures += result(f'actuator {jname} forcerange = URDF effort', bool(model.actuator_forcelimited[aid]) and close([-effort, effort], model.actuator_forcerange[aid], 1e-9), f'{model.actuator_forcerange[aid]}')
 
-    for link in (base_link,) + payload_links:
-        ui = urdf_links.get(link)
-        mi = mj_inertials.get(link)
-        if unitree is not None and link == unitree['imu_link']:
-            failures += result(f'{link} body exists', bodies.get(link) is not None)
+    # -- inertials -----------------------------------------------------------------------
+    compared = 0
+    urdf_total = 0.0
+    mj_total = 0.0
+    for link in urdf.links.values():
+        bid = body_id(link.name)
+        if bid < 0 or link.mass is None or not link.inertia:
             continue
-        failures += result(f'{link} explicit inertial', mi is not None)
-        if ui is None or mi is None:
+        if link.mass < 1e-6:
             continue
-        failures += result(f'{link} mass', math.isclose(ui['mass'], mi['mass'], abs_tol=1e-12))
-        failures += result(f'{link} COM', close(ui['com'], mi['com'], 1e-12))
-        failures += result(f'{link} inertia', close(ui['fullinertia'], mi['fullinertia'], 1e-15))
+        compared += 1
+        urdf_total += link.mass
+        mj_total += float(model.body_mass[bid])
+        failures += result(f'{link.name} mass', math.isclose(link.mass, float(model.body_mass[bid]), abs_tol=1e-12), f'urdf={link.mass:.15g} mjcf={float(model.body_mass[bid]):.15g}')
+        com = np.array([float(v) for v in link.inertial_xyz_text.split()])
+        failures += result(f'{link.name} COM', close(com, model.body_ipos[bid], 1e-12), f'urdf={com} mjcf={model.body_ipos[bid]}')
+        tensor = inertia_matrix(link.inertia)
+        eig = np.sort(np.linalg.eigvalsh(tensor))
+        failures += result(f'{link.name} principal inertia', close(eig, np.sort(model.body_inertia[bid]), 1e-12), f'urdf={eig} mjcf={np.sort(model.body_inertia[bid])}')
+        # Rebuild the full tensor in the body frame from MuJoCo's principal frame.
+        r = quat_to_matrix(model.body_iquat[bid])
+        rebuilt = r @ np.diag(model.body_inertia[bid]) @ r.T
+        rot_urdf = rpy_to_matrix([float(v) for v in link.inertial_rpy_text.split()])
+        # MuJoCo stores the principal frame as a quaternion from its own eigen
+        # decomposition; rebuilding the tensor is accurate to ~1e-6 relative.
+        tensor_tol = 1e-6 * float(np.abs(tensor).max())
+        failures += result(f'{link.name} inertia tensor', close(rot_urdf @ tensor @ rot_urdf.T, rebuilt, tensor_tol))
+        failures += result(f'{link.name} inertia positive definite', bool(np.all(eig > 0)) and eig[0] + eig[1] >= eig[2] - 1e-12, str(eig))
+    failures += result('inertials compared for every massive URDF link present in MJCF', compared > 0, f'{compared} links')
+    failures += result('explicit mass total', math.isclose(urdf_total, mj_total, abs_tol=1e-9), f'urdf={urdf_total:.9f} kg mjcf={mj_total:.9f} kg')
 
-    for link in payload_links:
-        joint = next(j for j in urdf_joints.values() if j['child'] == link)
-        body = bodies.get(link)
-        failures += result(f'{link} body exists', body is not None)
-        if body is not None:
-            parent_element = parents[body]
-            parent_name = parent_element.attrib.get('name') if parent_element.tag == 'body' else None
-            failures += result(f'{link} fixed parent', parent_name == joint['parent'])
-            failures += result(f'{link} fixed origin', close(joint['origin'], vec(body.attrib.get('pos', '0 0 0')), 1e-12))
+    # -- collision primitives --------------------------------------------------------------
+    size_map = {
+        'box': lambda a: np.array([float(v) / 2 for v in a['size'].split()]),
+        'cylinder': lambda a: np.array([float(a['radius']), float(a['length']) / 2, 0.0]),
+        'sphere': lambda a: np.array([float(a['radius']), 0.0, 0.0]),
+    }
+    type_map = {'box': mujoco.mjtGeom.mjGEOM_BOX, 'cylinder': mujoco.mjtGeom.mjGEOM_CYLINDER, 'sphere': mujoco.mjtGeom.mjGEOM_SPHERE}
+    primitives = 0
+    meshes = 0
+    for link in urdf.links.values():
+        if body_id(link.name) < 0:
+            continue
+        for index, col in enumerate(link.collisions):
+            if col.geometry not in size_map:
+                meshes += 1
+                continue
+            name = f'{link.name}_collision' if index == 0 else f'{link.name}_collision_{index}'
+            gid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
+            if gid < 0:
+                # Hand-written models may name geoms differently; only report.
+                print(f'[INFO] {name}: URDF {col.geometry} collision has no geom of that name')
+                continue
+            primitives += 1
+            failures += result(f'{name} type', model.geom_type[gid] == type_map[col.geometry])
+            expected_size = size_map[col.geometry](col.attrib)
+            n = {'box': 3, 'cylinder': 2, 'sphere': 1}[col.geometry]
+            failures += result(f'{name} size', close(expected_size[:n], model.geom_size[gid][:n], 1e-12), f'urdf={expected_size[:n]} mjcf={model.geom_size[gid][:n]}')
+            failures += result(f'{name} pos', close(col.xyz, model.geom_pos[gid], 1e-12), f'urdf={col.xyz} mjcf={model.geom_pos[gid]}')
+            if col.geometry != 'sphere':
+                failures += result(f'{name} orientation', close(rpy_to_matrix(col.rpy), quat_to_matrix(model.geom_quat[gid]), 1e-9))
+            failures += result(f'{name} collides with the floor', int(model.geom_contype[gid]) & int(model.geom_conaffinity[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor")]) != 0)
+    print(f'[INFO] {primitives} URDF collision primitives compared, {meshes} mesh collisions skipped')
 
-    for leg in legs:
-        foot_joint = urdf_joints[f'{leg}_foot_joint']
-        for element_name, element in (
-            ('geom', root.find(f".//geom[@name='{leg}_foot']")),
-            ('site', root.find(f".//site[@name='{leg}_foot_site']")),
-        ):
-            failures += result(f'{leg} foot {element_name} exists', element is not None)
-            if element is not None:
-                failures += result(f'{leg} foot {element_name} origin', close(foot_joint['origin'], vec(element.attrib['pos']), 1e-12))
-
-    default_actuator = root.find('./default/position')
-    if unitree is not None:
-        for name in revolute_joints:
-            effort = float(urdf_joints[name]['limit']['effort'])
-            actuator = next(a for a in actuators if a.attrib.get('joint') == name)
-            failures += result(
-                f'{name} actuator force limit',
-                close(vec(actuator.attrib['forcerange']), np.array([-effort, effort]), 1e-9),
-            )
-    elif default_actuator is None:
-        failures += result('default position actuator exists', False)
-    else:
-        failures += result('actuator force limit equals URDF effort', vec(default_actuator.attrib['forcerange']).tolist() == [-25.0, 25.0])
-        failures += result('actuator control range equals URDF joint range', close(vec(default_actuator.attrib['ctrlrange']), np.array([-math.pi, math.pi]), 1e-15))
-
-    for link, item in mj_inertials.items():
-        eigenvalues = np.linalg.eigvalsh(inertia_matrix(item['fullinertia']))
-        positive = bool(np.all(eigenvalues > 0.0))
-        triangle = bool(eigenvalues[0] + eigenvalues[1] >= eigenvalues[2] - 1e-15)
-        failures += result(f'{link} inertia positive definite', positive, str(eigenvalues))
-        failures += result(f'{link} principal inertia triangle', triangle, str(eigenvalues))
-
-    chain_links = [base_link] + [urdf_joints[name]['child'] for name in revolute_joints]
-    if unitree is not None:
-        urdf_total = sum(urdf_links[link]['mass'] for link in chain_links)
-        mjcf_total = sum(mj_inertials[link]['mass'] for link in chain_links)
-        failures += result(
-            'chain explicit mass',
-            math.isclose(urdf_total, mjcf_total, abs_tol=1e-12),
-            f'urdf={urdf_total:.12f} kg mjcf={mjcf_total:.12f} kg',
-        )
-    else:
-        urdf_total = sum(link['mass'] for link in urdf_links.values())
-        mjcf_total = sum(link['mass'] for link in mj_inertials.values())
-        failures += result('total explicit mass', math.isclose(urdf_total, mjcf_total, abs_tol=1e-12), f'urdf={urdf_total:.12f} kg mjcf={mjcf_total:.12f} kg')
-
-    if unitree is not None:
-        expected_base_size = unitree['base_half_size']
-        expected_base_pos = np.array([0.0, 0.0, 0.0])
-        size_label = 'base collision half-size from URDF box'
-        pos_label = 'base collision origin'
-    else:
-        expected_base_size = np.array([0.10447969287633896, 0.030220000073313713, 0.040951005241367966])
-        expected_base_pos = np.array([-0.0016277730464935303, 0.0, 0.03910232422640547])
-        size_label = 'base collision STL-bound size'
-        pos_label = 'base collision STL-bound center'
-    base_geom = root.find(".//geom[@name='base_collision']")
-    failures += result('base collision geom exists', base_geom is not None)
-    if base_geom is not None:
-        failures += result(size_label, close(vec(base_geom.attrib['size']), expected_base_size, 1e-12))
-        failures += result(pos_label, close(vec(base_geom.attrib.get('pos', '0 0 0')), expected_base_pos, 1e-12))
+    # -- feet ------------------------------------------------------------------------------
+    for leg, geom, site in zip(LEGS, foot_geom_names(params, sim), foot_site_names(params, sim)):
+        foot_link = links[leg][CHAIN_LENGTH - 1]
+        gid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, geom)
+        sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, site)
+        failures += result(f'{leg} foot geom {geom} exists', gid >= 0)
+        failures += result(f'{leg} foot site {site} exists', sid >= 0)
+        if sid >= 0:
+            urdf_pos, _ = urdf_world_pose(urdf, foot_link)
+            mj_site = data.site_xpos[sid] - data.xpos[body_id(base_link)]
+            failures += result(f'{site} at the URDF {foot_link} origin (CHAMP foot point)', close(urdf_pos, mj_site, 1e-9), f'urdf={urdf_pos} mjcf={mj_site}')
+        if gid >= 0:
+            failures += result(f'{geom} belongs to the {foot_link} chain', model.body(int(model.geom_bodyid[gid])).name in links[leg])
 
     print(f'\nResult: {failures} failed checks')
     return 1 if failures else 0

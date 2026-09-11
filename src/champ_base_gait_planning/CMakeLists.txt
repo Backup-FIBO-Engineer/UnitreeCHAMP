@@ -8,6 +8,7 @@ endif()
 add_compile_options(-std=c++17)
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(champ_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
@@ -52,6 +53,9 @@ add_executable(state_estimation_node src/state_estimation_node.cpp)
 target_link_libraries(state_estimation_node state_estimation)
 ament_target_dependencies(state_estimation_node ${dependencies})
 
+# ---------------------------------------------------------------------------
+# unitree_dds_bridge (any Unitree quadruped speaking rt/lowcmd / rt/lowstate)
+# ---------------------------------------------------------------------------
 find_package(Threads REQUIRED)
 find_package(unitree_sdk2 QUIET)
 if(NOT unitree_sdk2_FOUND)
@@ -74,7 +78,7 @@ if(unitree_sdk2_FOUND)
     src/unitree_dds_bridge.cpp
     src/motor_crc.cpp
   )
-  ament_target_dependencies(unitree_dds_bridge rclcpp sensor_msgs champ_msgs)
+  ament_target_dependencies(unitree_dds_bridge rclcpp sensor_msgs champ_msgs urdf)
   if(TARGET unitree_sdk2)
     target_link_libraries(unitree_dds_bridge unitree_sdk2 Threads::Threads)
     if(TARGET ddsc)
@@ -100,11 +104,11 @@ if(unitree_sdk2_FOUND)
     target_link_options(unitree_dds_bridge PRIVATE "LINKER:--disable-new-dtags")
   endif()
   set(UNITREE_DDS_BRIDGE_BUILT TRUE)
-  message(STATUS "unitree_sdk2 found: building unitree_dds_bridge (Go2/B2 rt/lowcmd Sim2Real)")
+  message(STATUS "unitree_sdk2 found: building unitree_dds_bridge (rt/lowcmd Sim2Real)")
 else()
   message(WARNING
     "unitree_sdk2 not found; skip unitree_dds_bridge. Install unitree_sdk2 to run "
-    "Go2/B2 hardware (ros2 launch champ_base_gait_planning b2_sim2real.launch.py).")
+    "Unitree hardware (ros2 launch champ_base_gait_planning unitree_sim2real.launch.py robot:=<robot>).")
 endif()
 
 install(TARGETS
@@ -135,128 +139,94 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
+# Robot file resolution shared by the launch files and the offline tools.
+ament_python_install_module(tools/champ_robot_files.py)
+
+# ---------------------------------------------------------------------------
+# Tests: one set per robot found in urdf/ (<robot>.urdf or <robot>.xacro).
+# ---------------------------------------------------------------------------
 if(BUILD_TESTING)
   enable_testing()
-  add_executable(verify_champ_xgo tools/verify_champ_xgo.cpp)
-  target_include_directories(verify_champ_xgo PRIVATE
+  find_package(yaml-cpp REQUIRED)
+  find_package(tinyxml2_vendor REQUIRED)
+  find_package(TinyXML2 REQUIRED)
+  find_package(urdfdom REQUIRED)
+  if(TARGET yaml-cpp::yaml-cpp)
+    set(CHAMP_YAML_CPP_TARGET yaml-cpp::yaml-cpp)
+  else()
+    set(CHAMP_YAML_CPP_TARGET yaml-cpp)
+  endif()
+
+  set(CHAMP_TOOL_INCLUDES
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools
     ${champ_INCLUDE_DIRS}
     ${champ_INCLUDE_DIRS}/champ
   )
-  add_test(NAME verify_champ_xgo COMMAND verify_champ_xgo)
-  add_test(
-    NAME verify_urdf_champ_contract
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_urdf_champ_contract.py
-      ${CMAKE_CURRENT_SOURCE_DIR}/urdf/xgo_rviz.xacro
-      ${CMAKE_CURRENT_SOURCE_DIR}/config/xgo_links.yaml
-      ${CMAKE_CURRENT_SOURCE_DIR}/config/xgo_joints.yaml
-  )
-  add_test(
-    NAME verify_mujoco_physics
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_mujoco_physics.py
-      ${CMAKE_CURRENT_SOURCE_DIR}/mujoco/xgo.xml
-  )
-  add_test(
-    NAME validate_mujoco_against_urdf
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_mujoco_against_urdf.py
-      ${CMAKE_CURRENT_SOURCE_DIR}/urdf/xgo_rviz.xacro
-      ${CMAKE_CURRENT_SOURCE_DIR}/mujoco/xgo.xml
-  )
-  add_executable(verify_champ_go2 tools/verify_champ_go2.cpp)
-  target_include_directories(verify_champ_go2 PRIVATE
-    ${champ_INCLUDE_DIRS}
-    ${champ_INCLUDE_DIRS}/champ
-  )
-  add_test(NAME verify_champ_go2 COMMAND verify_champ_go2)
+  add_executable(verify_champ_robot tools/verify_champ_robot.cpp)
+  target_include_directories(verify_champ_robot PRIVATE ${CHAMP_TOOL_INCLUDES})
+  target_link_libraries(verify_champ_robot ${CHAMP_YAML_CPP_TARGET} tinyxml2::tinyxml2)
+
+  add_executable(dump_champ_gait tools/dump_champ_gait.cpp)
+  target_include_directories(dump_champ_gait PRIVATE ${CHAMP_TOOL_INCLUDES})
+  target_link_libraries(dump_champ_gait ${CHAMP_YAML_CPP_TARGET} tinyxml2::tinyxml2)
+
   add_executable(verify_unitree_lowcmd tools/verify_unitree_lowcmd.cpp src/motor_crc.cpp)
   target_include_directories(verify_unitree_lowcmd PRIVATE include)
-  add_test(NAME verify_unitree_lowcmd COMMAND verify_unitree_lowcmd)
-  add_test(
-    NAME verify_urdf_champ_contract_go2
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_urdf_champ_contract.py
-      ${CMAKE_CURRENT_SOURCE_DIR}/urdf/go2.urdf
-      ${CMAKE_CURRENT_SOURCE_DIR}/config/go2_links.yaml
-      ${CMAKE_CURRENT_SOURCE_DIR}/config/go2_joints.yaml
-      --preset go2
-  )
-  add_test(
-    NAME verify_mujoco_physics_go2
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_mujoco_physics.py
-      ${CMAKE_CURRENT_SOURCE_DIR}/mujoco/go2.xml
-  )
-  add_test(
-    NAME validate_mujoco_against_urdf_go2
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_mujoco_against_urdf.py
-      ${CMAKE_CURRENT_SOURCE_DIR}/urdf/go2.urdf
-      ${CMAKE_CURRENT_SOURCE_DIR}/mujoco/go2.xml
-      --robot go2
-  )
-  add_test(
-    NAME verify_go2_gait_yaml
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_gait_yaml.py go2
-  )
-  add_test(
-    NAME verify_mujoco_walk_go2
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_mujoco_walk.py
-      --robot go2 0.35
-  )
+  target_link_libraries(verify_unitree_lowcmd ${CHAMP_YAML_CPP_TARGET})
+  ament_target_dependencies(verify_unitree_lowcmd urdfdom)
 
-  add_executable(verify_champ_b2 tools/verify_champ_b2.cpp)
-  target_include_directories(verify_champ_b2 PRIVATE
-    ${champ_INCLUDE_DIRS}
-    ${champ_INCLUDE_DIRS}/champ
-  )
-  add_test(NAME verify_champ_b2 COMMAND verify_champ_b2)
-  add_test(
-    NAME verify_urdf_champ_contract_b2
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_urdf_champ_contract.py
-      ${CMAKE_CURRENT_SOURCE_DIR}/urdf/b2.urdf
-      ${CMAKE_CURRENT_SOURCE_DIR}/config/b2_links.yaml
-      ${CMAKE_CURRENT_SOURCE_DIR}/config/b2_joints.yaml
-      --preset b2
-  )
-  add_test(
-    NAME verify_mujoco_physics_b2
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_mujoco_physics.py
-      ${CMAKE_CURRENT_SOURCE_DIR}/mujoco/b2.xml
-  )
-  add_test(
-    NAME validate_mujoco_against_urdf_b2
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_mujoco_against_urdf.py
-      ${CMAKE_CURRENT_SOURCE_DIR}/urdf/b2.urdf
-      ${CMAKE_CURRENT_SOURCE_DIR}/mujoco/b2.xml
-      --robot b2
-  )
-  add_test(
-    NAME verify_b2_gait_yaml
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_gait_yaml.py b2
-  )
-  add_test(
-    NAME verify_mujoco_walk_b2
-    COMMAND python3
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_mujoco_walk.py
-      --robot b2 0.35
-  )
+  set(TOOLS ${CMAKE_CURRENT_SOURCE_DIR}/tools)
+  file(GLOB ROBOT_DESCRIPTIONS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/urdf
+    ${CMAKE_CURRENT_SOURCE_DIR}/urdf/*.urdf
+    ${CMAKE_CURRENT_SOURCE_DIR}/urdf/*.xacro)
+  set(EXPANDED_URDFS)
+  foreach(description ${ROBOT_DESCRIPTIONS})
+    get_filename_component(robot ${description} NAME_WE)
+    get_filename_component(extension ${description} EXT)
+    if(extension STREQUAL ".xacro")
+      # The C++ tools read plain URDF; expand the xacro at build time.
+      set(robot_urdf ${CMAKE_CURRENT_BINARY_DIR}/urdf/${robot}.urdf)
+      add_custom_command(
+        OUTPUT ${robot_urdf}
+        COMMAND python3 ${TOOLS}/champ_robot_files.py expand
+          ${CMAKE_CURRENT_SOURCE_DIR}/urdf/${description} ${robot_urdf}
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/urdf/${description} ${TOOLS}/champ_robot_files.py
+        COMMENT "Expanding ${description} for the offline checks")
+      list(APPEND EXPANDED_URDFS ${robot_urdf})
+    else()
+      set(robot_urdf ${CMAKE_CURRENT_SOURCE_DIR}/urdf/${description})
+    endif()
+    set(config ${CMAKE_CURRENT_SOURCE_DIR}/config)
+
+    add_test(NAME verify_urdf_champ_contract_${robot}
+      COMMAND python3 ${TOOLS}/verify_urdf_champ_contract.py --robot ${robot})
+    add_test(NAME verify_champ_robot_${robot}
+      COMMAND verify_champ_robot ${robot_urdf}
+        ${config}/${robot}_gait.yaml ${config}/${robot}_joints.yaml ${config}/${robot}_links.yaml)
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/mujoco/${robot}.xml)
+      add_test(NAME validate_mujoco_against_urdf_${robot}
+        COMMAND python3 ${TOOLS}/validate_mujoco_against_urdf.py --robot ${robot})
+      add_test(NAME verify_mujoco_physics_${robot}
+        COMMAND python3 ${TOOLS}/verify_mujoco_physics.py --robot ${robot})
+      add_test(NAME verify_mujoco_walk_${robot}
+        COMMAND python3 ${TOOLS}/verify_mujoco_walk.py --robot ${robot})
+    endif()
+    if(EXISTS ${config}/${robot}_lowcmd.yaml)
+      add_test(NAME verify_unitree_lowcmd_${robot}
+        COMMAND verify_unitree_lowcmd ${robot_urdf} ${config}/${robot}_joints.yaml)
+    endif()
+  endforeach()
+  if(EXPANDED_URDFS)
+    add_custom_target(expand_robot_urdfs ALL DEPENDS ${EXPANDED_URDFS})
+  endif()
 endif()
 
 install(PROGRAMS
   mujoco/mujoco_sim.py
+  tools/generate_mjcf.py
   tools/verify_urdf_champ_contract.py
   tools/verify_mujoco_physics.py
   tools/validate_mujoco_against_urdf.py
-  tools/generate_unitree_mjcf.py
-  tools/verify_gait_yaml.py
   tools/verify_mujoco_walk.py
   tools/run_offline_checks.sh
   DESTINATION lib/${PROJECT_NAME}
@@ -265,4 +235,3 @@ install(PROGRAMS
 ament_export_include_directories(include)
 ament_export_dependencies(${dependencies})
 ament_package()
-

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-"""Physics checks for mujoco/{xgo,go2,b2}.xml against CHAMP standing pose and URDF FK.
+"""Physics checks of mujoco/<robot>.xml against the CHAMP standing pose and URDF FK.
 
+    verify_mujoco_physics.py --robot <robot> [--xml path]
+
+The standing joints/feet come from tools/dump_champ_gait.cpp (compiled on demand)
+fed with the robot URDF + yaml, the IMU offset from the URDF chain, the joint
+names from joints_map and the foot geoms/sites from links_map (or sim.* overrides).
 Requires the `mujoco` Python package. Does not need ROS.
 """
 
@@ -14,85 +19,12 @@ from typing import List
 
 import numpy as np
 
-XGO = {
-    'joint_names': [
-        'lf_hip_joint', 'lf_upper_leg_joint', 'lf_lower_leg_joint',
-        'rf_hip_joint', 'rf_upper_leg_joint', 'rf_lower_leg_joint',
-        'lh_hip_joint', 'lh_upper_leg_joint', 'lh_lower_leg_joint',
-        'rh_hip_joint', 'rh_upper_leg_joint', 'rh_lower_leg_joint',
-    ],
-    'foot_sites': ['lf_foot_site', 'rf_foot_site', 'lh_foot_site', 'rh_foot_site'],
-    'foot_geoms': ['lf_foot', 'rf_foot', 'lh_foot', 'rh_foot'],
-    'base_body': 'base_link',
-    'imu_body': 'imu_link',
-    'nominal_height': 0.10,
-    'imu_offset': np.array([0.085, 4.4164e-05, 0.070]),
-    'stand_joints': np.array([
-        0.00627760682, 0.823441148, -1.68932748,
-        -4.37113883e-08, 0.827949941, -1.6963079,
-        0.00627760682, 0.823441148, -1.68932748,
-        -4.37113883e-08, 0.827949941, -1.6963079,
-    ], dtype=np.float64),
-    'stand_feet': np.array([
-        [0.0749950036, 0.0717200041, -0.0999999866],
-        [0.0749949887, -0.0718300045, -0.099999994],
-        [-0.0750049949, 0.0717200562, -0.0999999866],
-        [-0.0750050098, -0.0718300045, -0.099999994],
-    ], dtype=np.float64),
-}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-GO2 = {
-    'joint_names': [
-        'FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint',
-        'FR_hip_joint', 'FR_thigh_joint', 'FR_calf_joint',
-        'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint',
-        'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint',
-    ],
-    'foot_sites': ['FL_foot_site', 'FR_foot_site', 'RL_foot_site', 'RR_foot_site'],
-    'foot_geoms': ['FL_foot', 'FR_foot', 'RL_foot', 'RR_foot'],
-    'base_body': 'base',
-    'imu_body': 'imu',
-    'nominal_height': 0.30,
-    'imu_offset': np.array([-0.02557, 0.0, 0.04232]),
-    'stand_joints': np.array([
-        -1.39090677e-08, 0.789464891, -1.57892966,
-        -7.35137107e-08, 0.789464891, -1.57892966,
-        -1.39090677e-08, 0.789464891, -1.57892966,
-        -7.35137107e-08, 0.789464891, -1.57892966,
-    ], dtype=np.float64),
-    'stand_feet': np.array([
-        [0.1933999658, 0.1419999897, -0.3000000119],
-        [0.1933999658, -0.1420000196, -0.3000000119],
-        [-0.1934000254, 0.1419999897, -0.3000000119],
-        [-0.1934000254, -0.1420000196, -0.3000000119],
-    ], dtype=np.float64),
-}
-
-# Standing pose/feet from `dump_unitree_gait b2 0 0 0 0` (config/b2_gait.yaml,
-# nominal_height 0.50). The tiny hip angles come from the URDF calf y offsets.
-B2 = {
-    'joint_names': GO2['joint_names'],
-    'foot_sites': GO2['foot_sites'],
-    'foot_geoms': GO2['foot_geoms'],
-    'base_body': 'base_link',
-    'imu_body': 'imu_link',
-    'nominal_height': 0.50,
-    'imu_offset': np.array([0.0, -0.02341, 0.04927]),
-    'stand_joints': np.array([
-        0.000173972046, 0.775150955, -1.55030179,
-        -0.000173940265, 0.775150955, -1.55030179,
-        0.000173972046, 0.775150955, -1.55030179,
-        -1.39090677e-08, 0.775193393, -1.55038667,
-    ], dtype=np.float64),
-    'stand_feet': np.array([
-        [0.3284999728, 0.1917300075, -0.5],
-        [0.3284999728, -0.1917299926, -0.5],
-        [-0.3285000324, 0.1917300075, -0.5],
-        [-0.3285000324, -0.1917300075, -0.5],
-    ], dtype=np.float64),
-}
-
-ROBOTS = {'xgo': XGO, 'go2': GO2, 'b2': B2}
+from champ_robot_files import (  # noqa: E402
+    SOURCE_PACKAGE_DIR, champ_joint_names, dump_stand, foot_geom_names, foot_site_names,
+    load_ros_params, load_urdf, resolve_robot_files,
+)
 
 
 def result(label: str, ok: bool, detail: str = '') -> int:
@@ -121,19 +53,29 @@ def main() -> int:
         return 0
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('xml_path', type=Path)
-    parser.add_argument('--robot', choices=sorted(ROBOTS), default=None)
+    parser.add_argument('--robot', required=True)
+    parser.add_argument('--package-dir', type=Path, default=SOURCE_PACKAGE_DIR)
+    parser.add_argument('--xml', type=Path, default=None, help='default mujoco/<robot>.xml')
     args = parser.parse_args()
-    robot_name = args.robot
-    if robot_name is None:
-        stem = args.xml_path.stem.lower()
-        robot_name = next((name for name in ('go2', 'b2') if name in stem), 'xgo')
-    cfg = ROBOTS[robot_name]
-    joint_names = cfg['joint_names']
-    foot_sites = cfg['foot_sites']
-    foot_geoms = cfg['foot_geoms']
 
-    model = mujoco.MjModel.from_xml_path(str(args.xml_path))
+    files = resolve_robot_files(args.package_dir, args.robot)
+    xml_path = args.xml or files.mujoco_xml
+    if xml_path is None:
+        print(f'FAIL: robot {args.robot!r} has no mujoco/{args.robot}.xml')
+        return 1
+    params = load_ros_params(*files.champ_yamls())
+    sim = files.sim_params()
+    urdf = load_urdf(files.urdf)
+    joint_names = champ_joint_names(params)
+    foot_geoms = foot_geom_names(params, sim)
+    foot_sites = foot_site_names(params, sim)
+    base_body = str(params['links_map']['base'])
+    imu_body = str(params['links_map']['imu'])
+    nominal_height = float(params['gait']['nominal_height'])
+    stand_joints, stand_feet = dump_stand(files)
+    print(f'{args.robot}: CHAMP stand joints {np.round(stand_joints, 4).tolist()}')
+
+    model = mujoco.MjModel.from_xml_path(str(xml_path))
     data = mujoco.MjData(model)
     failures = 0
 
@@ -143,50 +85,60 @@ def main() -> int:
 
     qpos_adr = np.array([model.joint(name).qposadr[0] for name in joint_names])
     act_id = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, name) for name in joint_names])
-    failures += result('actuator ids match joint order', np.all(act_id == np.arange(12)), str(act_id.tolist()))
+    failures += result('every joints_map joint has an actuator of the same name', np.all(act_id >= 0), str(act_id.tolist()))
+    root_qpos = int(model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, 'root')])
+    failures += result('free joint "root" on the base', root_qpos == 0 and model.body(base_body).id == model.jnt_bodyid[0])
 
-    # Identity quat: world_to_body is a no-op (same helper as mujoco_sim.py).
     ident = np.array([1.0, 0.0, 0.0, 0.0])
     vec = np.array([0.1, -0.2, 0.3])
     failures += result('world_to_body identity', np.allclose(world_to_body(ident, vec), vec))
 
     # CHAMP standing FK vs MuJoCo foot sites, base at origin so world==base.
     mujoco.mj_resetData(model, data)
-    data.qpos[0:3] = [0.0, 0.0, 0.0]
-    data.qpos[3:7] = [1.0, 0.0, 0.0, 0.0]
-    data.qpos[qpos_adr] = cfg['stand_joints']
+    data.qpos[root_qpos:root_qpos + 3] = [0.0, 0.0, 0.0]
+    data.qpos[root_qpos + 3:root_qpos + 7] = [1.0, 0.0, 0.0, 0.0]
+    data.qpos[qpos_adr] = stand_joints
     mujoco.mj_forward(model, data)
 
     site_err = 0.0
     for index, site_name in enumerate(foot_sites):
         site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, site_name)
+        if site_id < 0:
+            failures += result(f'{site_name} exists', False)
+            continue
         pos = data.site_xpos[site_id]
-        err = float(np.linalg.norm(pos - cfg['stand_feet'][index]))
+        err = float(np.linalg.norm(pos - stand_feet[index]))
         site_err = max(site_err, err)
         failures += result(
             f'{site_name} vs CHAMP foot_from_base',
             err < 1e-4,
-            f'mj={pos} champ={cfg["stand_feet"][index]} err={err:.6f} m',
+            f'mj={np.round(pos, 6)} champ={np.round(stand_feet[index], 6)} err={err:.6f} m',
         )
     failures += result('all foot sites match CHAMP standing FK', site_err < 1e-4, f'max err={site_err:.6f} m')
 
-    foot_radius = float(model.geom(foot_geoms[0]).size[0])
-    spawn_z = float(model.body(cfg['base_body']).pos[2])
-    expected_settle_z = cfg['nominal_height'] + foot_radius
+    foot_ids = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name) for name in foot_geoms]
+    failures += result('foot geoms exist', all(i >= 0 for i in foot_ids), str(dict(zip(foot_geoms, foot_ids))))
+    if any(i < 0 for i in foot_ids):
+        print(f'\nResult: {failures} failed checks')
+        return 1
+    foot_radius = float(model.geom_size[foot_ids[0]][0])
+    # Lowest point of the first foot geom below the CHAMP foot point, at stand.
+    foot_bottom = float(stand_feet[0][2] - (data.geom_xpos[foot_ids[0]][2] - foot_radius))
+    spawn_z = float(model.body(base_body).pos[2])
+    expected_settle_z = nominal_height + foot_bottom
     failures += result(
         'spawn is above standing contact height',
         spawn_z > expected_settle_z,
-        f'spawn={spawn_z:.3f} m  stand+radius={expected_settle_z:.3f} m  radius={foot_radius:.3f} m',
+        f'spawn={spawn_z:.3f} m  stand+foot={expected_settle_z:.3f} m  radius={foot_radius:.3f} m',
     )
 
     # Hold CHAMP stance with position actuators and drop onto the floor.
     mujoco.mj_resetData(model, data)
-    data.qpos[qpos_adr] = cfg['stand_joints']
-    data.ctrl[act_id] = cfg['stand_joints']
+    data.qpos[qpos_adr] = stand_joints
+    data.ctrl[act_id] = stand_joints
     mujoco.mj_forward(model, data)
 
     floor_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, 'floor')
-    foot_ids = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name) for name in foot_geoms]
 
     def contacts() -> List[bool]:
         flags = [False, False, False, False]
@@ -198,45 +150,42 @@ def main() -> int:
                     flags[index] = True
         return flags
 
-    hold_steps = 4000 if robot_name in ('go2', 'b2') else 2500
+    hold_steps = int(round(4.0 / float(model.opt.timestep)))
     for _ in range(hold_steps):
-        data.ctrl[act_id] = cfg['stand_joints']
+        data.ctrl[act_id] = stand_joints
         mujoco.mj_step(model, data)
 
-    base_z = float(data.qpos[2])
-    quat = data.qpos[3:7].copy()
+    base_z = float(data.qpos[root_qpos + 2])
+    quat = data.qpos[root_qpos + 3:root_qpos + 7].copy()
     tilt = 2.0 * math.acos(max(-1.0, min(1.0, float(quat[0]))))
     stood = contacts()
-    settle_tol = 0.03 if robot_name in ('go2', 'b2') else 0.02
+    settle_tol = max(0.02, 0.1 * nominal_height)
     failures += result(
-        f'held stance settles near {cfg["nominal_height"]:.2f} m + foot radius',
+        f'held stance settles near {nominal_height:.3f} m + foot',
         abs(base_z - expected_settle_z) < settle_tol,
-        f'base_z={base_z:.4f} m expected {expected_settle_z:.4f} m tilt={math.degrees(tilt):.2f} deg',
+        f'base_z={base_z:.4f} m expected {expected_settle_z:.4f} m (tol {settle_tol:.3f}) tilt={math.degrees(tilt):.2f} deg',
     )
-    failures += result(
-        'held stance stays upright',
-        tilt < math.radians(15.0),
-        f'tilt={math.degrees(tilt):.2f} deg',
-    )
+    failures += result('held stance stays upright', tilt < math.radians(15.0), f'tilt={math.degrees(tilt):.2f} deg')
     failures += result('all four feet contact the floor while standing', all(stood), str(stood))
 
     gravity = model.opt.gravity.astype(np.float64)
     lin_acc_world = data.qacc[0:3].copy()
     specific_force = world_to_body(quat, lin_acc_world - gravity)
-    # At rest, accelerometer specific force is +g in body Z (~9.81).
     failures += result(
         'IMU-style specific force at rest is +Z gravity',
         abs(float(specific_force[2]) - 9.81) < 1.5 and abs(float(specific_force[0])) < 1.5 and abs(float(specific_force[1])) < 1.5,
-        f'sf={specific_force} (expect ~[0,0,9.81])',
+        f'sf={np.round(specific_force, 3)} (expect ~[0,0,9.81])',
     )
 
-    imu_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, cfg['imu_body'])
-    imu_offset = model.body_pos[imu_body].copy()
-    failures += result(
-        f'{cfg["imu_body"]} offset matches URDF xyz',
-        np.allclose(imu_offset, cfg['imu_offset'], atol=1e-9),
-        str(imu_offset),
-    )
+    imu_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, imu_body)
+    failures += result(f'IMU body {imu_body!r} (links_map.imu) exists', imu_id >= 0)
+    if imu_id >= 0:
+        # mujoco_sim.py uses body_pos of the IMU body as lever arm, so it must be a direct
+        # child of the base and sit at the URDF chain offset.
+        imu_offset = model.body_pos[imu_id].copy()
+        urdf_offset = urdf.chain_xyz(urdf.root, imu_body)
+        failures += result(f'{imu_body} is a direct child of {base_body}', int(model.body_parentid[imu_id]) == model.body(base_body).id)
+        failures += result(f'{imu_body} offset matches URDF xyz', np.allclose(imu_offset, urdf_offset, atol=1e-9), f'mj={imu_offset} urdf={urdf_offset}')
 
     print(f'\nResult: {failures} failed checks')
     return 1 if failures else 0
