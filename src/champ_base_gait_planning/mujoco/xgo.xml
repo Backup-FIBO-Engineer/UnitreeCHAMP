@@ -1,6 +1,6 @@
 <mujoco model="xgo">
   <!--
-    Kinematics and inertial values are copied from urdf/xgo_rviz.xacro.
+    Kinematics and inertial values are copied from urdf/xgo.xacro.
     Requires MuJoCo >= 3.1 because the position actuator uses kv.
   -->
   <compiler angle="radian" autolimits="true" inertiafromgeom="false"/>

@@ -1,0 +1,12 @@
+# MuJoCo settings for XGO. mujoco/xgo.xml is hand-written (the URDF collision
+# is STL meshes), so the geom/site names below tell mujoco_sim.py and the
+# checkers where the feet are.
+/**:
+  ros__parameters:
+    sim:
+      foot_geom_names: [lf_foot, rf_foot, lh_foot, rh_foot]
+      foot_site_names: [lf_foot_site, rf_foot_site, lh_foot_site, rh_foot_site]
+      # URDF velocity="1.5" is a SolidWorks exporter placeholder; the real XGO
+      # bus servo runs 0.1 s/60deg = 10.47 rad/s. The CHAMP trot needs up to
+      # ~8.7 rad/s, so 1.5 would cut walking speed to ~57% (verified in physics).
+      max_joint_velocity: 10.47

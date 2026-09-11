@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""MuJoCo physics simulation for XGO driven by CHAMP gait planning.
+"""MuJoCo physics simulation of a CHAMP quadruped.
 
-Topic convention used by the reviewed launch file:
+Robot-agnostic: the model file comes from the `xml_path` parameter, the joint
+names from the CHAMP `joints_map` yaml, the base/IMU frames from `links_map`
+and the per-joint velocity limits from the `urdf` parameter (or a single
+`sim.max_joint_velocity` override). Switching robots therefore only needs a
+different set of config files, see launch/mujoco_sim.launch.py robot:=<robot>.
+
+Topic convention:
   Subscribe: /joint_commands       sensor_msgs/JointState (desired positions)
   Publish:   /joint_states         sensor_msgs/JointState (simulated measurements)
   Publish:   /foot_contacts/sim    champ_msgs/ContactsStamped
   Publish:   /odom/ground_truth    nav_msgs/Odometry
   Publish:   /imu/data             sensor_msgs/Imu
 
-The implementation resolves joint/actuator addresses from names instead of
-assuming hard-coded qpos/qvel slices. It also converts the free-joint linear
-velocity from world coordinates into base_link coordinates using the full
-quaternion, not yaw only.
+Joint/actuator addresses are resolved from names instead of assuming qpos/qvel
+slices, and the free-joint linear velocity is rotated from world into the base
+frame with the full quaternion, not yaw only.
 """
 
 from __future__ import annotations
@@ -21,25 +26,21 @@ import os
 import signal
 import threading
 import time
-from typing import Dict, List, Optional
+import xml.etree.ElementTree as ET
+from typing import Any, Dict, List, Optional
 
 import mujoco
 import numpy as np
 import rclpy
-from ament_index_python.packages import get_package_share_directory
 from champ_msgs.msg import ContactsStamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, JointState
 
-JOINT_NAMES = [
-    'lf_hip_joint', 'lf_upper_leg_joint', 'lf_lower_leg_joint',
-    'rf_hip_joint', 'rf_upper_leg_joint', 'rf_lower_leg_joint',
-    'lh_hip_joint', 'lh_upper_leg_joint', 'lh_lower_leg_joint',
-    'rh_hip_joint', 'rh_upper_leg_joint', 'rh_lower_leg_joint',
-]
-
-FOOT_GEOM_NAMES = ['lf_foot', 'rf_foot', 'lh_foot', 'rh_foot']
+# CHAMP leg order (QuadrupedBase::legs) and joints_map keys.
+CHAMP_LEGS = ('left_front', 'right_front', 'left_hind', 'right_hind')
+JOINTS_PER_LEG = 3
+FOOT_INDEX = 3
 
 
 def _version_tuple(version: str) -> tuple[int, int, int]:
@@ -71,25 +72,31 @@ def _world_to_body_vector(quat_wxyz: np.ndarray, vector_world: np.ndarray) -> np
     return rotation_world_from_body.T @ vector_world
 
 
+def _urdf_velocity_limits(urdf_xml: str, joint_names: List[str]) -> np.ndarray:
+    """<limit velocity> of each joint; joints without one get +inf (no rate limit)."""
+    root = ET.fromstring(urdf_xml)
+    velocities: Dict[str, float] = {}
+    for joint in root.findall('joint'):
+        limit = joint.find('limit')
+        if limit is not None and 'velocity' in limit.attrib:
+            velocities[joint.attrib['name']] = float(limit.attrib['velocity'])
+    limits = np.full(len(joint_names), np.inf, dtype=np.float64)
+    for index, name in enumerate(joint_names):
+        value = velocities.get(name)
+        if value is not None and value > 0.0:
+            limits[index] = value
+    return limits
+
+
 class MujocoSim(Node):
     def __init__(self) -> None:
-        super().__init__('mujoco_sim')
-
-        self.declare_parameter('headless', False)
-        self.declare_parameter('xml_path', '')
-        self.declare_parameter('joint_names', JOINT_NAMES)
-        self.declare_parameter('foot_geom_names', FOOT_GEOM_NAMES)
-        self.declare_parameter('imu_body_name', 'imu_link')
-        self.declare_parameter('base_frame', 'base_link')
-        self.declare_parameter('command_topic', 'joint_commands')
-        self.declare_parameter('joint_state_topic', 'joint_states')
-        self.declare_parameter('contact_topic', 'foot_contacts/sim')
-        self.declare_parameter('odom_topic', 'odom/ground_truth')
-        self.declare_parameter('imu_topic', 'imu/data')
-        self.declare_parameter('publish_rate', 50.0)
-        self.declare_parameter('realtime_factor', 1.0)
-        self.declare_parameter('command_timeout_sec', 0.5)
-        self.declare_parameter('max_joint_velocity', 1.5)
+        # Same parameter style as the CHAMP nodes: everything from the yaml files
+        # (joints_map, links_map, sim.*) and launch overrides is auto-declared.
+        super().__init__(
+            'mujoco_sim',
+            allow_undeclared_parameters=True,
+            automatically_declare_parameters_from_overrides=True,
+        )
 
         if _version_tuple(mujoco.__version__) < (3, 1, 0):
             raise RuntimeError(
@@ -97,25 +104,24 @@ class MujocoSim(Node):
                 'install MuJoCo >= 3.1.0.'
             )
 
-        joint_names = list(self.get_parameter('joint_names').value)
-        foot_geom_names = list(self.get_parameter('foot_geom_names').value)
-        if len(joint_names) != 12:
-            raise ValueError('joint_names must contain 12 hinge names')
-        if len(foot_geom_names) != 4:
-            raise ValueError('foot_geom_names must contain 4 foot geoms (LF RF LH RH)')
-        self.joint_names = joint_names
-        self.base_frame = str(self.get_parameter('base_frame').value)
-        self.imu_body_name = str(self.get_parameter('imu_body_name').value)
-        imu_body_name = self.imu_body_name
+        self.joint_names = self._champ_joint_names()
+        links_map = {leg: self._require_string_list(f'links_map.{leg}', FOOT_INDEX + 1)
+                     for leg in CHAMP_LEGS}
+        self.base_frame = self._require_string('links_map.base')
+        self.imu_body_name = self._require_string('links_map.imu')
 
-        configured_xml = str(self.get_parameter('xml_path').value).strip()
-        if configured_xml:
-            xml_path = os.path.abspath(os.path.expanduser(configured_xml))
-        else:
-            xml_path = os.path.join(
-                get_package_share_directory('champ_base_gait_planning'),
-                'mujoco', 'xgo.xml'
+        default_foot_geoms = [f'{links_map[leg][FOOT_INDEX]}_collision' for leg in CHAMP_LEGS]
+        foot_geom_names = [str(v) for v in self._param('sim.foot_geom_names', default_foot_geoms)]
+        if len(foot_geom_names) != 4:
+            raise ValueError('sim.foot_geom_names must list 4 foot geoms (LF RF LH RH)')
+
+        configured_xml = str(self._param('xml_path', '')).strip()
+        if not configured_xml:
+            raise ValueError(
+                "parameter 'xml_path' is required (mujoco_sim.launch.py sets it to "
+                'mujoco/<robot>.xml)'
             )
+        xml_path = os.path.abspath(os.path.expanduser(configured_xml))
         if not os.path.isfile(xml_path):
             raise FileNotFoundError(f'MuJoCo XML not found: {xml_path}')
 
@@ -138,10 +144,15 @@ class MujocoSim(Node):
         self.root_dof_address = int(self.model.jnt_dofadr[self.root_joint_id])
 
         # Offset of the IMU body from the floating base, used for lever-arm terms.
-        imu_body_id = int(mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, imu_body_name))
+        imu_body_id = int(mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_BODY, self.imu_body_name))
         if imu_body_id >= 0:
             self.imu_lever_arm = self.model.body_pos[imu_body_id].astype(np.float64).copy()
         else:
+            self.get_logger().warn(
+                f'MuJoCo model has no body {self.imu_body_name!r} (links_map.imu); '
+                'IMU is reported at the base origin'
+            )
             self.imu_lever_arm = np.zeros(3, dtype=np.float64)
 
         self.floor_geom_id = self._require_id(mujoco.mjtObj.mjOBJ_GEOM, 'floor')
@@ -154,17 +165,22 @@ class MujocoSim(Node):
 
         self.joint_ranges = self.model.jnt_range[self.joint_ids].copy()
         self.joint_limited = self.model.jnt_limited[self.joint_ids].astype(bool).copy()
+        self.max_velocity = self._velocity_limits()
 
         self.target_command: Optional[np.ndarray] = None
         self.control_command = np.zeros(len(self.joint_names), dtype=np.float64)
         self.last_command_monotonic = 0.0
         self.started = False
 
-        command_topic = str(self.get_parameter('command_topic').value)
-        joint_state_topic = str(self.get_parameter('joint_state_topic').value)
-        contact_topic = str(self.get_parameter('contact_topic').value)
-        odom_topic = str(self.get_parameter('odom_topic').value)
-        imu_topic = str(self.get_parameter('imu_topic').value)
+        self.command_timeout_sec = float(self._param('command_timeout_sec', 0.5))
+        self.realtime_factor = float(self._param('realtime_factor', 1.0))
+        self.headless = bool(self._param('headless', False))
+
+        command_topic = str(self._param('command_topic', 'joint_commands'))
+        joint_state_topic = str(self._param('joint_state_topic', 'joint_states'))
+        contact_topic = str(self._param('contact_topic', 'foot_contacts/sim'))
+        odom_topic = str(self._param('odom_topic', 'odom/ground_truth'))
+        imu_topic = str(self._param('imu_topic', 'imu/data'))
 
         self.command_sub = self.create_subscription(
             JointState, command_topic, self.command_callback, 10
@@ -174,7 +190,7 @@ class MujocoSim(Node):
         self.odom_pub = self.create_publisher(Odometry, odom_topic, 10)
         self.imu_pub = self.create_publisher(Imu, imu_topic, 10)
 
-        publish_rate = float(self.get_parameter('publish_rate').value)
+        publish_rate = float(self._param('publish_rate', 50.0))
         if not math.isfinite(publish_rate) or publish_rate <= 0.0:
             raise ValueError('publish_rate must be > 0')
         self.publish_timer = self.create_timer(1.0 / publish_rate, self.publish_state)
@@ -184,9 +200,58 @@ class MujocoSim(Node):
 
         total_mass = float(np.sum(self.model.body_mass))
         self.get_logger().info(
-            f'MuJoCo sim ready: xml={xml_path}, nq={self.model.nq}, nv={self.model.nv}, '
-            f'nu={self.model.nu}, total_mass={total_mass:.9f} kg'
+            f'MuJoCo sim ready: xml={xml_path}, base={self.base_frame}, '
+            f'nq={self.model.nq}, nv={self.model.nv}, nu={self.model.nu}, '
+            f'total_mass={total_mass:.6f} kg, joint velocity limits='
+            f'{np.round(self.max_velocity, 3).tolist()} rad/s'
         )
+
+    # -- parameters -----------------------------------------------------------------
+
+    def _param(self, name: str, default: Any) -> Any:
+        if self.has_parameter(name):
+            value = self.get_parameter(name).value
+            if value is not None:
+                return value
+        return default
+
+    def _require_string(self, name: str) -> str:
+        value = self._param(name, None)
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"parameter '{name}' is required (CHAMP links/joints yaml)")
+        return value
+
+    def _require_string_list(self, name: str, minimum: int) -> List[str]:
+        value = self._param(name, None)
+        if value is None or len(value) < minimum:
+            raise ValueError(
+                f"parameter '{name}' must list at least {minimum} names (CHAMP yaml)"
+            )
+        return [str(v) for v in value]
+
+    def _champ_joint_names(self) -> List[str]:
+        """Actuated joints in CHAMP order: LF, RF, LH, RH x (hip, upper, lower)."""
+        names: List[str] = []
+        for leg in CHAMP_LEGS:
+            names.extend(self._require_string_list(f'joints_map.{leg}', JOINTS_PER_LEG)[:JOINTS_PER_LEG])
+        if len(set(names)) != len(names):
+            raise ValueError('joints_map lists a joint name twice')
+        return names
+
+    def _velocity_limits(self) -> np.ndarray:
+        override = float(self._param('sim.max_joint_velocity', 0.0))
+        if math.isfinite(override) and override > 0.0:
+            return np.full(len(self.joint_names), override, dtype=np.float64)
+        urdf_xml = str(self._param('urdf', ''))
+        if not urdf_xml.strip():
+            self.get_logger().warn(
+                "neither 'urdf' nor sim.max_joint_velocity given; joint targets are not "
+                'rate limited'
+            )
+            return np.full(len(self.joint_names), np.inf, dtype=np.float64)
+        return _urdf_velocity_limits(urdf_xml, self.joint_names)
+
+    # -- simulation -----------------------------------------------------------------
 
     def _require_id(self, object_type: mujoco.mjtObj, name: str) -> int:
         object_id = int(mujoco.mj_name2id(self.model, object_type, name))
@@ -240,26 +305,22 @@ class MujocoSim(Node):
         if self.target_command is None:
             return
 
-        timeout = float(self.get_parameter('command_timeout_sec').value)
+        timeout = self.command_timeout_sec
         if timeout > 0.0 and now_monotonic - self.last_command_monotonic > timeout:
             # Stop advancing a stale gait and hold the current measured pose.
             target = self.data.qpos[self.qpos_addresses].copy()
         else:
             target = self.target_command
 
-        max_velocity = float(self.get_parameter('max_joint_velocity').value)
-        if max_velocity > 0.0 and math.isfinite(max_velocity):
-            max_delta = max_velocity * dt
-            error = target - self.control_command
-            self.control_command += np.clip(error, -max_delta, max_delta)
-        else:
-            self.control_command[:] = target
+        max_delta = self.max_velocity * dt
+        error = target - self.control_command
+        self.control_command += np.clip(error, -max_delta, max_delta)
 
         self.control_command[:] = self._clip_to_joint_ranges(self.control_command)
         self.data.ctrl[self.actuator_ids] = self.control_command
 
     def simulation_loop(self) -> None:
-        realtime_factor = float(self.get_parameter('realtime_factor').value)
+        realtime_factor = self.realtime_factor
         if not math.isfinite(realtime_factor) or realtime_factor <= 0.0:
             self.get_logger().warn('Invalid realtime_factor; using 1.0')
             realtime_factor = 1.0
@@ -327,9 +388,8 @@ class MujocoSim(Node):
             quaternion_wxyz, linear_velocity_world
         )
         # IMU reports specific force. At rest this is approximately +9.81 m/s^2 on body Z.
-        # The sensor sits at imu_link, not at the free-joint origin, so add the rigid-body
-        # lever-arm terms; they dominate during footfall impacts (verified against a
-        # finite-difference of the imu_link world trajectory).
+        # The sensor sits at the IMU link, not at the free-joint origin, so add the
+        # rigid-body lever-arm terms; they dominate during footfall impacts.
         gravity_world = np.array([0.0, 0.0, -9.81], dtype=np.float64)
         specific_force_body = _world_to_body_vector(
             quaternion_wxyz, linear_acceleration_world - gravity_world
@@ -420,8 +480,7 @@ def main(args=None) -> None:
         spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
         spin_thread.start()
 
-        headless = bool(node.get_parameter('headless').value)
-        if headless:
+        if node.headless:
             while rclpy.ok() and not stop.is_set():
                 time.sleep(0.05)
         else:
