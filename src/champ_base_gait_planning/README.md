@@ -55,7 +55,9 @@ three CHAMP yamls. `champ::URDF::getPose` sums the joint `origin xyz` along the
    RViz. MuJoCo cannot read COLLADA, so `tools/champ_mesh_assets.py` converts
    each `.dae`/`.stl` into `mujoco/assets/<robot>/<mesh>_<n>.obj` (one file per
    material, coloured from the URDF/COLLADA materials); press `3` in the viewer
-   to overlay the collision primitives.
+   to overlay the collision primitives. Robots whose URDF has only mesh
+   collision keep a hand-written MJCF (`python3 tools/generate_mjcf.py <robot>
+   --patch-visuals` inserts the visual meshes without replacing the collision).
 
 4. **Sim2Real**: `unitree_dds_bridge` maps CHAMP joints (LF, RF, LH, RH) to the
    Unitree motor order (FR, FL, RR, RL × hip/thigh/calf) with `joints_map`,
@@ -156,8 +158,9 @@ No code changes. For a robot `<name>`:
    `contact_force_threshold` from the unitree_sdk2 `<name>_stand_example`.
 6. `config/<name>_sim.yaml` + `python3 tools/generate_mjcf.py <name>` → `mujoco/<name>.xml`
    plus `mujoco/assets/<name>/*.obj` converted from the URDF visual meshes
-   (URDF feet must be sphere collisions; otherwise hand-write the MJCF and list
-   `sim.foot_geom_names` / `sim.foot_site_names` as `xgo_sim.yaml` does).
+   (URDF feet must be sphere collisions; otherwise hand-write the MJCF, list
+   `sim.foot_geom_names` / `sim.foot_site_names` as `xgo_sim.yaml` does, then
+   `python3 tools/generate_mjcf.py <name> --patch-visuals` to attach the STLs).
 7. Optional `rviz/<name>_gait.rviz`.
 8. `bash tools/run_offline_checks.sh <name>`.
 

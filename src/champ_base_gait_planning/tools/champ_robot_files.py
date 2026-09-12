@@ -202,13 +202,15 @@ def foot_site_names(params: Dict[str, Any], sim: Dict[str, Any]) -> List[str]:
 # ---------------------------------------------------------------------------
 
 def _package_share_dir(package: str) -> str:
+    # generate_mjcf / champ_mesh_assets run against the source tree; prefer that
+    # so $(find) and package:// do not pick a stale colcon install of this package.
+    if package == PACKAGE_NAME and (SOURCE_PACKAGE_DIR / 'urdf').is_dir():
+        return str(SOURCE_PACKAGE_DIR)
     try:
         from ament_index_python.packages import get_package_share_directory
 
         return get_package_share_directory(package)
     except Exception:
-        if package == PACKAGE_NAME:
-            return str(SOURCE_PACKAGE_DIR)
         return package
 
 

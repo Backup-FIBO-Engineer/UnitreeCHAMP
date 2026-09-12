@@ -1,6 +1,7 @@
 # MuJoCo settings for XGO. mujoco/xgo.xml is hand-written (the URDF collision
-# is STL meshes), so the geom/site names below tell mujoco_sim.py and the
-# checkers where the feet are.
+# is STL meshes); `python3 tools/generate_mjcf.py xgo --patch-visuals` attaches
+# the URDF visual STLs without replacing the fitted capsules. The geom/site
+# names below tell mujoco_sim.py and the checkers where the feet are.
 /**:
   ros__parameters:
     sim:

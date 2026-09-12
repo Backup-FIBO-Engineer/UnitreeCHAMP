@@ -2,12 +2,14 @@
 """Write mujoco/<robot>.xml from the robot URDF and its CHAMP/sim yaml files.
 
     python3 tools/generate_mjcf.py <robot> [--output path]
+    python3 tools/generate_mjcf.py <robot> --patch-visuals   # keep a hand-written MJCF
 
 Everything comes from the files of the selected robot:
   * kinematic tree, joint axes/limits/efforts and inertials: urdf/<robot>.urdf
   * collision geometry: the URDF <collision> primitives (box, cylinder, sphere);
     mesh collisions are skipped, so a robot whose URDF only has mesh collision
-    needs a hand-written MJCF (see mujoco/xgo.xml)
+    needs a hand-written MJCF (see mujoco/xgo.xml). `--patch-visuals` keeps that
+    file's kinematics/collision and only inserts the URDF visual meshes.
   * visual geometry: the URDF <visual> meshes (dae/stl), converted by
     tools/champ_mesh_assets.py into mujoco/assets/<robot>/*.obj (one per
     material, coloured from the URDF/COLLADA materials) and emitted as
@@ -248,6 +250,133 @@ class Generator:
             parts.append(f'rgba="{rgba}"/>')
             self.emit(indent + ' '.join(parts))
 
+    def visual_geom_elements(self, link: UrdfLink):
+        """Parseable <geom class="visual"> elements for one URDF link (registers assets)."""
+        import xml.etree.ElementTree as ET
+
+        saved, self.lines = self.lines, []
+        for index, visual in enumerate(link.visuals):
+            base = f'{link.name}_visual' if index == 0 else f'{link.name}_visual_{index}'
+            self.emit_visual(link, base, visual, '')
+        lines, self.lines = self.lines, saved
+        elements = []
+        for line in lines:
+            text = line.strip()
+            if text.startswith('<geom'):
+                elements.append(ET.fromstring(text))
+        return elements
+
+    def patch_existing(self, xml_path: Path) -> str:
+        """Keep a hand-written MJCF; add/replace URDF visual mesh geoms and assets."""
+        import xml.etree.ElementTree as ET
+
+        if not xml_path.exists():
+            raise FileNotFoundError(
+                f'{xml_path} does not exist; --patch-visuals needs a hand-written MJCF')
+        parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
+        root = ET.parse(xml_path, parser=parser).getroot()
+
+        compiler = root.find('compiler')
+        if compiler is None:
+            raise RuntimeError(f'{xml_path}: no <compiler>')
+        compiler.set('meshdir', f'assets/{self.files.robot}')
+
+        default = root.find('default')
+        if default is None:
+            raise RuntimeError(f'{xml_path}: no <default>')
+        self._ensure_default_class(default, 'collision', {'group': str(COLLISION_GROUP)})
+        self._ensure_default_class(default, 'visual', {
+            'type': 'mesh', 'group': str(VISUAL_GROUP),
+            'contype': '0', 'conaffinity': '0', 'mass': '0',
+        })
+
+        bodies = {body.attrib['name']: body for body in root.iter('body') if 'name' in body.attrib}
+        for body in bodies.values():
+            for geom in list(body.findall('geom')):
+                name = geom.attrib.get('name', '')
+                if geom.attrib.get('class') == 'visual' or '_visual' in name:
+                    body.remove(geom)
+                else:
+                    geom.set('class', 'collision')
+
+        attached = 0
+        missing: List[str] = []
+        for link in self.urdf.links.values():
+            if not link.visuals:
+                continue
+            body = bodies.get(link.name)
+            if body is None:
+                missing.append(link.name)
+                continue
+            for element in self.visual_geom_elements(link):
+                self._insert_before_child_bodies(body, element)
+                attached += 1
+        if missing:
+            print('skipped visuals on URDF links with no MJCF body: ' + ', '.join(missing))
+
+        for child in list(root):
+            if isinstance(child.tag, str):
+                continue
+            text = child.text or ''
+            if 'Kinematics' in text and 'Visual meshes' not in text:
+                child.text = (text.rstrip() +
+                              '\n    Visual meshes: tools/generate_mjcf.py patch-visuals '
+                              f'(assets/{self.files.robot}; collision stays in group {COLLISION_GROUP}).\n  ')
+            break
+
+        old_asset = root.find('asset')
+        if old_asset is not None:
+            root.remove(old_asset)
+        if self.mesh_assets:
+            asset = ET.Element('asset')
+            for line in self.mesh_assets.values():
+                asset.append(ET.fromstring(line.strip()))
+            self._insert_after_tag(root, asset, 'default')
+
+        ET.indent(root, space='  ')
+        xml = ET.tostring(root, encoding='unicode')
+        if not xml.endswith('\n'):
+            xml += '\n'
+        print(f'patched {attached} visual geoms into {xml_path.name} '
+              f'({len(self.mesh_assets)} mesh assets)')
+        self.lines = xml.splitlines()
+        return xml
+
+    @staticmethod
+    def _ensure_default_class(default, class_name: str, geom_attrib: Dict[str, str]) -> None:
+        import xml.etree.ElementTree as ET
+
+        for child in default.findall('default'):
+            if child.attrib.get('class') == class_name:
+                geom = child.find('geom')
+                if geom is None:
+                    geom = ET.SubElement(child, 'geom')
+                geom.attrib.update(geom_attrib)
+                return
+        child = ET.SubElement(default, 'default', {'class': class_name})
+        ET.SubElement(child, 'geom', geom_attrib)
+
+    @staticmethod
+    def _insert_after_tag(parent, element, tag: str) -> None:
+        for index, child in enumerate(list(parent)):
+            if isinstance(child.tag, str) and child.tag == tag:
+                parent.insert(index + 1, element)
+                return
+        parent.append(element)
+
+    @staticmethod
+    def _insert_before_child_bodies(body, element) -> None:
+        """Put visual geoms after joints/inertial/collision, before sites and child bodies."""
+        insert_at = 0
+        for index, child in enumerate(list(body)):
+            tag = child.tag if isinstance(child.tag, str) else ''
+            if tag in ('joint', 'freejoint', 'inertial', 'geom'):
+                insert_at = index + 1
+            elif tag in ('site', 'body'):
+                body.insert(index, element)
+                return
+        body.insert(insert_at, element)
+
     def emit_body(self, link_name: str, depth: int) -> None:
         indent = '  ' * depth
         link = self.urdf.links[link_name]
@@ -365,12 +494,25 @@ def main() -> int:
                         help='default mujoco/<robot>.xml inside the package')
     parser.add_argument('--no-visual-meshes', action='store_true',
                         help='emit collision primitives only (no mesh assets)')
+    parser.add_argument('--patch-visuals', action='store_true',
+                        help='keep an existing hand-written MJCF; only insert URDF visual meshes')
     args = parser.parse_args()
 
     files = resolve_robot_files(args.package_dir, args.robot)
     generator = Generator(files, visual_meshes=not args.no_visual_meshes)
-    xml = generator.generate()
     output = args.output or (args.package_dir / 'mujoco' / f'{args.robot}.xml')
+    if args.patch_visuals:
+        xml = generator.patch_existing(output)
+    else:
+        try:
+            xml = generator.generate()
+        except RuntimeError as exc:
+            if 'Hand-write the MJCF' in str(exc) and output.exists() and not args.no_visual_meshes:
+                print(f'{exc}')
+                print(f'patching visual meshes into existing {output}')
+                xml = generator.patch_existing(output)
+            else:
+                raise
     output.write_text(xml, encoding='utf-8')
     print(f'wrote {output} ({len(generator.lines)} lines)')
     if generator.mesh_assets:

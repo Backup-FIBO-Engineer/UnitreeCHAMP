@@ -2,233 +2,158 @@
   <!--
     Kinematics and inertial values are copied from urdf/xgo.xacro.
     Requires MuJoCo >= 3.1 because the position actuator uses kv.
+    Visual meshes: tools/generate_mjcf.py patch-visuals (assets/xgo; collision stays in group 3).
   -->
-  <compiler angle="radian" autolimits="true" inertiafromgeom="false"/>
-  <option timestep="0.001" gravity="0 0 -9.81" integrator="implicitfast"/>
-
+  <compiler angle="radian" autolimits="true" inertiafromgeom="false" meshdir="assets/xgo" />
+  <option timestep="0.001" gravity="0 0 -9.81" integrator="implicitfast" />
   <default>
     <!-- These passive joint values are simulation tuning; they are not present in the URDF. -->
-    <joint damping="0.03" armature="0.0005" frictionloss="0.01"/>
-    <geom friction="0.9 0.02 0.001" condim="3"/>
-
+    <joint damping="0.03" armature="0.0005" frictionloss="0.01" />
+    <geom friction="0.9 0.02 0.001" condim="3" />
     <!-- URDF limits: effort=25 Nm, position=[-pi,+pi].
          URDF velocity=1.5 rad/s is enforced by mujoco_sim.py as a command slew-rate limit. -->
-    <position kp="6.0" kv="0.12"
-              ctrllimited="true" ctrlrange="-3.141592653589793 3.141592653589793"
-              forcelimited="true" forcerange="-25 25"/>
+    <position kp="6.0" kv="0.12" ctrllimited="true" ctrlrange="-3.141592653589793 3.141592653589793" forcelimited="true" forcerange="-25 25" />
+    <default class="collision">
+      <geom group="3" />
+    </default>
+    <default class="visual">
+      <geom type="mesh" group="1" contype="0" conaffinity="0" mass="0" />
+    </default>
   </default>
-
+  <asset>
+    <mesh name="XGO_base_link_0" file="XGO_base_link_0.obj" />
+    <mesh name="XGO_lf_hip_link_0" file="XGO_lf_hip_link_0.obj" />
+    <mesh name="XGO_lf_upper_leg_link_0" file="XGO_lf_upper_leg_link_0.obj" />
+    <mesh name="XGO_lf_lower_leg_link_0" file="XGO_lf_lower_leg_link_0.obj" />
+    <mesh name="XGO_rf_hip_link_0" file="XGO_rf_hip_link_0.obj" />
+    <mesh name="XGO_rf_upper_leg_link_0" file="XGO_rf_upper_leg_link_0.obj" />
+    <mesh name="XGO_rf_lower_leg_link_0" file="XGO_rf_lower_leg_link_0.obj" />
+    <mesh name="XGO_lh_hip_link_0" file="XGO_lh_hip_link_0.obj" />
+    <mesh name="XGO_lh_upper_leg_link_0" file="XGO_lh_upper_leg_link_0.obj" />
+    <mesh name="XGO_lh_lower_leg_link_0" file="XGO_lh_lower_leg_link_0.obj" />
+    <mesh name="XGO_rh_hip_link_0" file="XGO_rh_hip_link_0.obj" />
+    <mesh name="XGO_rh_upper_leg_link_0" file="XGO_rh_upper_leg_link_0.obj" />
+    <mesh name="XGO_rh_lower_leg_link_0" file="XGO_rh_lower_leg_link_0.obj" />
+    <mesh name="XGO_camera_link_0" file="XGO_camera_link_0.obj" />
+    <mesh name="XGO_laser_link_0" file="XGO_laser_link_0.obj" />
+  </asset>
   <worldbody>
-    <geom name="floor" type="plane" size="10 10 0.1" rgba="0.8 0.8 0.8 1"/>
-    <light pos="0 0 2" dir="0 0 -1"/>
-
+    <geom name="floor" type="plane" size="10 10 0.1" rgba="0.8 0.8 0.8 1" />
+    <light pos="0 0 2" dir="0 0 -1" />
     <!-- Spawn height is a simulator initial condition, not a URDF property. -->
     <body name="base_link" pos="0 0 0.115">
-      <freejoint name="root"/>
-      <inertial
-        pos="0.00520835146477011 -0.000260539720599709 0.0280591836024867"
-        mass="0.387351847505872"
-        fullinertia="0.000190614924105559 0.0010563840813291 0.00118548753067654 1.611909782579E-06 -3.19577698047172E-06 -1.54888786284979E-06"/>
-
+      <freejoint name="root" />
+      <inertial pos="0.00520835146477011 -0.000260539720599709 0.0280591836024867" mass="0.387351847505872" fullinertia="0.000190614924105559 0.0010563840813291 0.00118548753067654 1.611909782579E-06 -3.19577698047172E-06 -1.54888786284979E-06" />
       <!-- Simplified collision box fitted to the STL axis-aligned bounds. -->
-      <geom name="base_collision" type="box"
-            size="0.10447969287633896 0.030220000073313713 0.040951005241367966"
-            pos="-0.0016277730464935303 0 0.03910232422640547"
-            rgba="0.2 0.3 0.6 1"/>
-
+      <geom name="base_collision" type="box" size="0.10447969287633896 0.030220000073313713 0.040951005241367966" pos="-0.0016277730464935303 0 0.03910232422640547" rgba="0.2 0.3 0.6 1" class="collision" />
+      <geom name="base_link_visual" class="visual" mesh="XGO_base_link_0" rgba="0.529411764705882 0.549019607843137 0.549019607843137 1" />
       <body name="lf_hip_link" pos="0.09332 0.022407 0.01454">
-        <joint name="lf_hip_joint" type="hinge" axis="1 0 0"
-               limited="true" range="-3.141592653589793 3.141592653589793"/>
-        <inertial
-          pos="-0.0139720018610026 0.0250894092965121 0.00927328896542384"
-          mass="0.019600254805245"
-          fullinertia="5.89203493378017E-06 3.7904205321723E-06 6.88837034802653E-06 -5.67038080686865E-07 -2.62883769311083E-07 -1.16491568847576E-06"/>
-        <geom name="lf_hip_collision" type="capsule"
-              fromto="0 0 0 -0.018325 0.049313 0" size="0.009"
-              rgba="0.5 0.5 0.5 1"/>
-
+        <joint name="lf_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+        <inertial pos="-0.0139720018610026 0.0250894092965121 0.00927328896542384" mass="0.019600254805245" fullinertia="5.89203493378017E-06 3.7904205321723E-06 6.88837034802653E-06 -5.67038080686865E-07 -2.62883769311083E-07 -1.16491568847576E-06" />
+        <geom name="lf_hip_collision" type="capsule" fromto="0 0 0 -0.018325 0.049313 0" size="0.009" rgba="0.5 0.5 0.5 1" class="collision" />
+        <geom name="lf_hip_link_visual" class="visual" mesh="XGO_lf_hip_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
         <body name="lf_upper_leg_link" pos="-0.018325 0.049313 0">
-          <joint name="lf_upper_leg_joint" type="hinge" axis="0 1 0"
-                 limited="true" range="-3.141592653589793 3.141592653589793"/>
-          <inertial
-            pos="-0.00689428079248722 -0.0186700000000002 -0.0299480398915498"
-            mass="0.012342949675616"
-            fullinertia="5.47497407669945E-06 4.86023562858699E-06 1.83454593627849E-06 -3.81090641763637E-22 5.64425515319236E-21 1.43987804089399E-12"/>
-          <geom name="lf_upper_collision" type="capsule"
-                fromto="0 0 0 0 -0.00072 -0.059896" size="0.008"
-                rgba="0.3 0.3 0.3 1"/>
-
+          <joint name="lf_upper_leg_joint" type="hinge" axis="0 1 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+          <inertial pos="-0.00689428079248722 -0.0186700000000002 -0.0299480398915498" mass="0.012342949675616" fullinertia="5.47497407669945E-06 4.86023562858699E-06 1.83454593627849E-06 -3.81090641763637E-22 5.64425515319236E-21 1.43987804089399E-12" />
+          <geom name="lf_upper_collision" type="capsule" fromto="0 0 0 0 -0.00072 -0.059896" size="0.008" rgba="0.3 0.3 0.3 1" class="collision" />
+          <geom name="lf_upper_leg_link_visual" class="visual" mesh="XGO_lf_upper_leg_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
           <body name="lf_lower_leg_link" pos="0 -0.00072 -0.059896">
-            <joint name="lf_lower_leg_joint" type="hinge" axis="0 1 0"
-                   limited="true" range="-3.141592653589793 3.141592653589793"/>
-            <inertial
-              pos="-0.0167811557825132 -0.0183250059303989 -0.03162385840477"
-              mass="0.022687879462132"
-              fullinertia="1.41147289858082E-05 1.36483004430885E-05 1.39274465973039E-06 -5.34206016944144E-13 -9.81905906721924E-07 -2.32220795182774E-12"/>
-            <geom name="lf_lower_collision" type="capsule"
-                  fromto="0 0 0 -0.028 0 -0.0815" size="0.006"
-                  rgba="0.3 0.3 0.3 1"/>
-            <geom name="lf_foot" type="sphere" pos="-0.028 0 -0.0815"
-                  size="0.008" rgba="0.9 0.4 0.2 1"/>
-            <site name="lf_foot_site" pos="-0.028 0 -0.0815" size="0.004"/>
+            <joint name="lf_lower_leg_joint" type="hinge" axis="0 1 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+            <inertial pos="-0.0167811557825132 -0.0183250059303989 -0.03162385840477" mass="0.022687879462132" fullinertia="1.41147289858082E-05 1.36483004430885E-05 1.39274465973039E-06 -5.34206016944144E-13 -9.81905906721924E-07 -2.32220795182774E-12" />
+            <geom name="lf_lower_collision" type="capsule" fromto="0 0 0 -0.028 0 -0.0815" size="0.006" rgba="0.3 0.3 0.3 1" class="collision" />
+            <geom name="lf_foot" type="sphere" pos="-0.028 0 -0.0815" size="0.008" rgba="0.9 0.4 0.2 1" class="collision" />
+            <geom name="lf_lower_leg_link_visual" class="visual" mesh="XGO_lf_lower_leg_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+            <site name="lf_foot_site" pos="-0.028 0 -0.0815" size="0.004" />
           </body>
         </body>
       </body>
-
       <body name="rf_hip_link" pos="0.09332 -0.022517 0.01454">
-        <joint name="rf_hip_joint" type="hinge" axis="1 0 0"
-               limited="true" range="-3.141592653589793 3.141592653589793"/>
-        <inertial
-          pos="-0.0139720087743548 -0.0250894047059051 0.00927327973937202"
-          mass="0.00980012555956536"
-          fullinertia="2.94601764038129E-06 1.89520891096478E-06 3.44418624242758E-06 2.83519397568544E-07 -1.31441224533273E-07 5.82458368574124E-07"/>
-        <geom name="rf_hip_collision" type="capsule"
-              fromto="0 0 0 -0.018325 -0.049313 0" size="0.009"
-              rgba="0.5 0.5 0.5 1"/>
-
+        <joint name="rf_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+        <inertial pos="-0.0139720087743548 -0.0250894047059051 0.00927327973937202" mass="0.00980012555956536" fullinertia="2.94601764038129E-06 1.89520891096478E-06 3.44418624242758E-06 2.83519397568544E-07 -1.31441224533273E-07 5.82458368574124E-07" />
+        <geom name="rf_hip_collision" type="capsule" fromto="0 0 0 -0.018325 -0.049313 0" size="0.009" rgba="0.5 0.5 0.5 1" class="collision" />
+        <geom name="rf_hip_link_visual" class="visual" mesh="XGO_rf_hip_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
         <body name="rf_upper_leg_link" pos="-0.018325 -0.049313 0">
-          <joint name="rf_upper_leg_joint" type="hinge" axis="0 1 0"
-                 limited="true" range="-3.141592653589793 3.141592653589793"/>
-          <inertial
-            pos="-0.00689428079248688 0.018700000000002 -0.0299480398915499"
-            mass="0.0123429496756159"
-            fullinertia="5.47497407669944E-06 4.86023562858698E-06 1.83454593627847E-06 -2.0611276716309E-20 1.96257242900458E-21 1.43987803985982E-12"/>
-          <geom name="rf_upper_collision" type="capsule"
-                fromto="0 0 0 0 0 -0.059896" size="0.008"
-                rgba="0.3 0.3 0.3 1"/>
-
+          <joint name="rf_upper_leg_joint" type="hinge" axis="0 1 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+          <inertial pos="-0.00689428079248688 0.018700000000002 -0.0299480398915499" mass="0.0123429496756159" fullinertia="5.47497407669944E-06 4.86023562858698E-06 1.83454593627847E-06 -2.0611276716309E-20 1.96257242900458E-21 1.43987803985982E-12" />
+          <geom name="rf_upper_collision" type="capsule" fromto="0 0 0 0 0 -0.059896" size="0.008" rgba="0.3 0.3 0.3 1" class="collision" />
+          <geom name="rf_upper_leg_link_visual" class="visual" mesh="XGO_rf_upper_leg_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
           <body name="rf_lower_leg_link" pos="0 0 -0.059896">
-            <joint name="rf_lower_leg_joint" type="hinge" axis="0 1 0"
-                   limited="true" range="-3.141592653589793 3.141592653589793"/>
-            <inertial
-              pos="-0.016781155771109 0.0183249940632203 -0.0316238583795284"
-              mass="0.0226878794123114"
-              fullinertia="1.41147289746255E-05 1.3648300431669E-05 1.39274465829374E-06 -5.3440270556883E-13 -9.81905905136456E-07 -2.32170698199082E-12"/>
-            <geom name="rf_lower_collision" type="capsule"
-                  fromto="0 0 0 -0.028 0 -0.0815" size="0.006"
-                  rgba="0.3 0.3 0.3 1"/>
-            <geom name="rf_foot" type="sphere" pos="-0.028 0 -0.0815"
-                  size="0.008" rgba="0.9 0.4 0.2 1"/>
-            <site name="rf_foot_site" pos="-0.028 0 -0.0815" size="0.004"/>
+            <joint name="rf_lower_leg_joint" type="hinge" axis="0 1 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+            <inertial pos="-0.016781155771109 0.0183249940632203 -0.0316238583795284" mass="0.0226878794123114" fullinertia="1.41147289746255E-05 1.3648300431669E-05 1.39274465829374E-06 -5.3440270556883E-13 -9.81905905136456E-07 -2.32170698199082E-12" />
+            <geom name="rf_lower_collision" type="capsule" fromto="0 0 0 -0.028 0 -0.0815" size="0.006" rgba="0.3 0.3 0.3 1" class="collision" />
+            <geom name="rf_foot" type="sphere" pos="-0.028 0 -0.0815" size="0.008" rgba="0.9 0.4 0.2 1" class="collision" />
+            <geom name="rf_lower_leg_link_visual" class="visual" mesh="XGO_rf_lower_leg_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+            <site name="rf_foot_site" pos="-0.028 0 -0.0815" size="0.004" />
           </body>
         </body>
       </body>
-
       <body name="lh_hip_link" pos="-0.05668 0.022407 0.01454">
-        <joint name="lh_hip_joint" type="hinge" axis="1 0 0"
-               limited="true" range="-3.141592653589793 3.141592653589793"/>
-        <inertial
-          pos="-0.0139720018610022 0.0250894092965121 0.00927328896542402"
-          mass="0.019600254805245"
-          fullinertia="5.89203493378016E-06 3.79042053217232E-06 6.8883703480265E-06 -5.67038080686868E-07 -2.62883769311102E-07 -1.16491568847579E-06"/>
-        <geom name="lh_hip_collision" type="capsule"
-              fromto="0 0 0 -0.0183249999999999 0.0493130541805868 0" size="0.009"
-              rgba="0.5 0.5 0.5 1"/>
-
+        <joint name="lh_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+        <inertial pos="-0.0139720018610022 0.0250894092965121 0.00927328896542402" mass="0.019600254805245" fullinertia="5.89203493378016E-06 3.79042053217232E-06 6.8883703480265E-06 -5.67038080686868E-07 -2.62883769311102E-07 -1.16491568847579E-06" />
+        <geom name="lh_hip_collision" type="capsule" fromto="0 0 0 -0.0183249999999999 0.0493130541805868 0" size="0.009" rgba="0.5 0.5 0.5 1" class="collision" />
+        <geom name="lh_hip_link_visual" class="visual" mesh="XGO_lh_hip_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
         <body name="lh_upper_leg_link" pos="-0.0183249999999999 0.0493130541805868 0">
-          <joint name="lh_upper_leg_joint" type="hinge" axis="0 1 0"
-                 limited="true" range="-3.141592653589793 3.141592653589793"/>
-          <inertial
-            pos="-0.00689428079248695 -0.0186700000000005 -0.0299480398915495"
-            mass="0.0123429496756159"
-            fullinertia="5.47497407669944E-06 4.86023562858698E-06 1.83454593627848E-06 -2.75633243799764E-21 9.32745289581667E-21 1.4398780610445E-12"/>
-          <geom name="lh_upper_collision" type="capsule"
-                fromto="0 0 0 0 -0.00072 -0.059896" size="0.008"
-                rgba="0.3 0.3 0.3 1"/>
-
+          <joint name="lh_upper_leg_joint" type="hinge" axis="0 1 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+          <inertial pos="-0.00689428079248695 -0.0186700000000005 -0.0299480398915495" mass="0.0123429496756159" fullinertia="5.47497407669944E-06 4.86023562858698E-06 1.83454593627848E-06 -2.75633243799764E-21 9.32745289581667E-21 1.4398780610445E-12" />
+          <geom name="lh_upper_collision" type="capsule" fromto="0 0 0 0 -0.00072 -0.059896" size="0.008" rgba="0.3 0.3 0.3 1" class="collision" />
+          <geom name="lh_upper_leg_link_visual" class="visual" mesh="XGO_lh_upper_leg_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
           <body name="lh_lower_leg_link" pos="0 -0.00072 -0.059896">
-            <joint name="lh_lower_leg_joint" type="hinge" axis="0 1 0"
-                   limited="true" range="-3.141592653589793 3.141592653589793"/>
-            <inertial
-              pos="-0.0167811557787652 -0.0183250059325003 -0.0316238584061345"
-              mass="0.0226878794439316"
-              fullinertia="1.41147289784473E-05 1.36483004357316E-05 1.39274465908676E-06 -5.34101678210922E-13 -9.81905906147013E-07 -2.32069575705543E-12"/>
-            <geom name="lh_lower_collision" type="capsule"
-                  fromto="0 0 0 -0.028 0 -0.0815" size="0.006"
-                  rgba="0.3 0.3 0.3 1"/>
-            <geom name="lh_foot" type="sphere" pos="-0.028 0 -0.0815"
-                  size="0.008" rgba="0.9 0.4 0.2 1"/>
-            <site name="lh_foot_site" pos="-0.028 0 -0.0815" size="0.004"/>
+            <joint name="lh_lower_leg_joint" type="hinge" axis="0 1 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+            <inertial pos="-0.0167811557787652 -0.0183250059325003 -0.0316238584061345" mass="0.0226878794439316" fullinertia="1.41147289784473E-05 1.36483004357316E-05 1.39274465908676E-06 -5.34101678210922E-13 -9.81905906147013E-07 -2.32069575705543E-12" />
+            <geom name="lh_lower_collision" type="capsule" fromto="0 0 0 -0.028 0 -0.0815" size="0.006" rgba="0.3 0.3 0.3 1" class="collision" />
+            <geom name="lh_foot" type="sphere" pos="-0.028 0 -0.0815" size="0.008" rgba="0.9 0.4 0.2 1" class="collision" />
+            <geom name="lh_lower_leg_link_visual" class="visual" mesh="XGO_lh_lower_leg_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+            <site name="lh_foot_site" pos="-0.028 0 -0.0815" size="0.004" />
           </body>
         </body>
       </body>
-
       <body name="rh_hip_link" pos="-0.05668 -0.022517 0.01454">
-        <joint name="rh_hip_joint" type="hinge" axis="1 0 0"
-               limited="true" range="-3.141592653589793 3.141592653589793"/>
-        <inertial
-          pos="-0.0139720087743545 -0.0250894047059051 0.00927327973937168"
-          mass="0.00980012555956509"
-          fullinertia="2.94601764038125E-06 1.89520891096475E-06 3.44418624242756E-06 2.83519397568547E-07 -1.31441224533272E-07 5.8245836857411E-07"/>
-        <geom name="rh_hip_collision" type="capsule"
-              fromto="0 0 0 -0.018325 -0.049313 0" size="0.009"
-              rgba="0.5 0.5 0.5 1"/>
-
+        <joint name="rh_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+        <inertial pos="-0.0139720087743545 -0.0250894047059051 0.00927327973937168" mass="0.00980012555956509" fullinertia="2.94601764038125E-06 1.89520891096475E-06 3.44418624242756E-06 2.83519397568547E-07 -1.31441224533272E-07 5.8245836857411E-07" />
+        <geom name="rh_hip_collision" type="capsule" fromto="0 0 0 -0.018325 -0.049313 0" size="0.009" rgba="0.5 0.5 0.5 1" class="collision" />
+        <geom name="rh_hip_link_visual" class="visual" mesh="XGO_rh_hip_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
         <body name="rh_upper_leg_link" pos="-0.018325 -0.049313 0">
-          <joint name="rh_upper_leg_joint" type="hinge" axis="0 1 0"
-                 limited="true" range="-3.141592653589793 3.141592653589793"/>
-          <inertial
-            pos="-0.00689428079248684 0.0187000000000015 -0.0299480398915497"
-            mass="0.0123429496756159"
-            fullinertia="5.47497407669943E-06 4.86023562858697E-06 1.83454593627849E-06 -1.59437966027726E-21 2.38691803281188E-22 1.43987807159176E-12"/>
-          <geom name="rh_upper_collision" type="capsule"
-                fromto="0 0 0 0 0 -0.059896" size="0.008"
-                rgba="0.3 0.3 0.3 1"/>
-
+          <joint name="rh_upper_leg_joint" type="hinge" axis="0 1 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+          <inertial pos="-0.00689428079248684 0.0187000000000015 -0.0299480398915497" mass="0.0123429496756159" fullinertia="5.47497407669943E-06 4.86023562858697E-06 1.83454593627849E-06 -1.59437966027726E-21 2.38691803281188E-22 1.43987807159176E-12" />
+          <geom name="rh_upper_collision" type="capsule" fromto="0 0 0 0 0 -0.059896" size="0.008" rgba="0.3 0.3 0.3 1" class="collision" />
+          <geom name="rh_upper_leg_link_visual" class="visual" mesh="XGO_rh_upper_leg_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
           <body name="rh_lower_leg_link" pos="0 0 -0.059896">
-            <joint name="rh_lower_leg_joint" type="hinge" axis="0 1 0"
-                   limited="true" range="-3.141592653589793 3.141592653589793"/>
-            <inertial
-              pos="-0.0167811557016845 0.0183249940379433 -0.0316238581313005"
-              mass="0.0226878792028959"
-              fullinertia="1.41147288978932E-05 1.36483003526844E-05 1.39274464946125E-06 -5.37750477164225E-13 -9.81905884621754E-07 -2.33519052107278E-12"/>
-            <geom name="rh_lower_collision" type="capsule"
-                  fromto="0 0 0 -0.028 0 -0.0815" size="0.006"
-                  rgba="0.3 0.3 0.3 1"/>
-            <geom name="rh_foot" type="sphere" pos="-0.028 0 -0.0815"
-                  size="0.008" rgba="0.9 0.4 0.2 1"/>
-            <site name="rh_foot_site" pos="-0.028 0 -0.0815" size="0.004"/>
+            <joint name="rh_lower_leg_joint" type="hinge" axis="0 1 0" limited="true" range="-3.141592653589793 3.141592653589793" />
+            <inertial pos="-0.0167811557016845 0.0183249940379433 -0.0316238581313005" mass="0.0226878792028959" fullinertia="1.41147288978932E-05 1.36483003526844E-05 1.39274464946125E-06 -5.37750477164225E-13 -9.81905884621754E-07 -2.33519052107278E-12" />
+            <geom name="rh_lower_collision" type="capsule" fromto="0 0 0 -0.028 0 -0.0815" size="0.006" rgba="0.3 0.3 0.3 1" class="collision" />
+            <geom name="rh_foot" type="sphere" pos="-0.028 0 -0.0815" size="0.008" rgba="0.9 0.4 0.2 1" class="collision" />
+            <geom name="rh_lower_leg_link_visual" class="visual" mesh="XGO_rh_lower_leg_link_0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+            <site name="rh_foot_site" pos="-0.028 0 -0.0815" size="0.004" />
           </body>
         </body>
       </body>
-
       <!-- Fixed payload links copied from the URDF so their mass contributes to base dynamics. -->
       <body name="camera_link" pos="0.075751 0 0.059653">
-        <inertial
-          pos="-0.0141667877097374 -4.70243546289578E-05 -0.000117154201057887"
-          mass="0.00465716120355248"
-          fullinertia="3.06225211138596E-07 3.69724180703298E-07 3.81829903495435E-07 -1.92519366340594E-09 5.22083640009109E-09 2.22463439295763E-09"/>
+        <inertial pos="-0.0141667877097374 -4.70243546289578E-05 -0.000117154201057887" mass="0.00465716120355248" fullinertia="3.06225211138596E-07 3.69724180703298E-07 3.81829903495435E-07 -1.92519366340594E-09 5.22083640009109E-09 2.22463439295763E-09" />
+        <geom name="camera_link_visual" class="visual" mesh="XGO_camera_link_0" rgba="0.0549019607843137 0.0549019607843137 0.0549019607843137 1" />
       </body>
-
       <body name="laser_link" pos="-0.016732 4.4164E-05 0.10335">
-        <inertial
-          pos="3.78566923279477E-05 -0.000119937093508327 -0.022798439512917"
-          mass="0.0141156733693049"
-          fullinertia="2.42577727195545E-06 2.37021015047955E-06 4.25931212063486E-06 -7.70141087552742E-09 6.54011918414534E-09 6.61859556534528E-09"/>
+        <inertial pos="3.78566923279477E-05 -0.000119937093508327 -0.022798439512917" mass="0.0141156733693049" fullinertia="2.42577727195545E-06 2.37021015047955E-06 4.25931212063486E-06 -7.70141087552742E-09 6.54011918414534E-09 6.61859556534528E-09" />
+        <geom name="laser_link_visual" class="visual" mesh="XGO_laser_link_0" rgba="1 1 1 1" />
       </body>
-
       <body name="imu_link" pos="0.085 4.4164E-05 0.070">
-        <inertial
-          pos="0 0 0"
-          mass="0.0141156733693049"
-          fullinertia="2.42577727195545E-06 2.37021015047955E-06 4.25931212063486E-06 0 0 0"/>
-        <site name="imu_site" pos="0 0 0" size="0.003"/>
+        <inertial pos="0 0 0" mass="0.0141156733693049" fullinertia="2.42577727195545E-06 2.37021015047955E-06 4.25931212063486E-06 0 0 0" />
+        <site name="imu_site" pos="0 0 0" size="0.003" />
       </body>
     </body>
   </worldbody>
-
   <actuator>
-    <position name="lf_hip_joint" joint="lf_hip_joint"/>
-    <position name="lf_upper_leg_joint" joint="lf_upper_leg_joint"/>
-    <position name="lf_lower_leg_joint" joint="lf_lower_leg_joint"/>
-    <position name="rf_hip_joint" joint="rf_hip_joint"/>
-    <position name="rf_upper_leg_joint" joint="rf_upper_leg_joint"/>
-    <position name="rf_lower_leg_joint" joint="rf_lower_leg_joint"/>
-    <position name="lh_hip_joint" joint="lh_hip_joint"/>
-    <position name="lh_upper_leg_joint" joint="lh_upper_leg_joint"/>
-    <position name="lh_lower_leg_joint" joint="lh_lower_leg_joint"/>
-    <position name="rh_hip_joint" joint="rh_hip_joint"/>
-    <position name="rh_upper_leg_joint" joint="rh_upper_leg_joint"/>
-    <position name="rh_lower_leg_joint" joint="rh_lower_leg_joint"/>
+    <position name="lf_hip_joint" joint="lf_hip_joint" />
+    <position name="lf_upper_leg_joint" joint="lf_upper_leg_joint" />
+    <position name="lf_lower_leg_joint" joint="lf_lower_leg_joint" />
+    <position name="rf_hip_joint" joint="rf_hip_joint" />
+    <position name="rf_upper_leg_joint" joint="rf_upper_leg_joint" />
+    <position name="rf_lower_leg_joint" joint="rf_lower_leg_joint" />
+    <position name="lh_hip_joint" joint="lh_hip_joint" />
+    <position name="lh_upper_leg_joint" joint="lh_upper_leg_joint" />
+    <position name="lh_lower_leg_joint" joint="lh_lower_leg_joint" />
+    <position name="rh_hip_joint" joint="rh_hip_joint" />
+    <position name="rh_upper_leg_joint" joint="rh_upper_leg_joint" />
+    <position name="rh_lower_leg_joint" joint="rh_lower_leg_joint" />
   </actuator>
 </mujoco>
