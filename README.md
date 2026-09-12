@@ -91,6 +91,7 @@ empty when that `setup.sh` is already sourced. The bridge publishes
 `unitree_go/LowCmd` on `/lowcmd` (CRC, motor order FR/FL/RR/RL) with the
 `kp` / `kd` / `motor_mode` from `config/<robot>_lowcmd.yaml`, clamps every
 joint target to the URDF limits of the selected robot, and reads `/lowstate`.
-Stand with Sport first; the launch releases Sport (`/api/motion_switcher`)
-and holds the pose, then ramps into CHAMP over `ramp_sec`. Do not mix with the
+Stand with Sport first; the bridge releases Sport (`/api/motion_switcher`),
+sends no LowCmd while the robot still reports a motion service active, then
+holds the pose and ramps into CHAMP over `ramp_sec`. Do not mix with the
 Sport API.

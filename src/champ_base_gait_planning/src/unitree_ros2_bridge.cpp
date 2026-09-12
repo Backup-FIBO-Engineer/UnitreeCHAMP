@@ -253,7 +253,12 @@ private:
           "NIC in CYCLONEDDS_URI, on ROS domain 0, with RMW cyclonedds?",
           robot_name_.c_str());
       }
-      for (int attempt = 0; attempt < 6 && rclcpp::ok(); ++attempt) {
+      // Same policy as the unitree_ros2 stand examples: while the robot answers
+      // that a motion service is still active, keep releasing and never start
+      // LowCmd underneath it. Only when the service does not answer at all
+      // (robot not reachable) give up after a few attempts and carry on.
+      int unanswered = 0;
+      for (int attempt = 1; rclcpp::ok(); ++attempt) {
         std::string form;
         std::string name;
         const int32_t check = msc.checkMode(form, name);
@@ -262,15 +267,30 @@ private:
           return;
         }
         const int32_t ret = msc.releaseMode();
-        RCLCPP_INFO(
-          get_logger(),
-          "ReleaseMode attempt %d returned %d (CheckMode %d, active='%s').",
-          attempt + 1, ret, check, name.c_str());
+        if (check == UnitreeMotionSwitcher::kSuccess) {
+          unanswered = 0;
+          RCLCPP_WARN(
+            get_logger(),
+            "Attempt %d: motion service '%s' (form %s) still active on the %s, ReleaseMode "
+            "returned %d; retrying, no LowCmd until it is off.",
+            attempt, name.c_str(), form.c_str(), robot_name_.c_str(), ret);
+        } else {
+          ++unanswered;
+          RCLCPP_INFO(
+            get_logger(),
+            "Attempt %d: motion_switcher did not answer (CheckMode %d, ReleaseMode %d).",
+            attempt, check, ret);
+          if (unanswered >= 6) {
+            RCLCPP_WARN(
+              get_logger(),
+              "motion_switcher unreachable after %d attempts. Continuing; make sure Sport is "
+              "off on the %s before it joins the network.",
+              unanswered, robot_name_.c_str());
+            return;
+          }
+        }
         std::this_thread::sleep_for(std::chrono::seconds(1));
       }
-      RCLCPP_WARN(
-        get_logger(),
-        "Sport may still be active. Stop it on the robot before walking.");
     } catch (const std::exception & ex) {
       RCLCPP_WARN(
         get_logger(),

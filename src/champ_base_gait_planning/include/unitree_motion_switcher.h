@@ -1,6 +1,7 @@
 #ifndef CHAMP_UNITREE_MOTION_SWITCHER_H
 #define CHAMP_UNITREE_MOTION_SWITCHER_H
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -87,12 +88,22 @@ public:
       response_topic_, rclcpp::QoS(20),
       std::bind(&UnitreeMotionSwitcher::onResponse, this, std::placeholders::_1), options);
     executor_.add_callback_group(callback_group_, node_.get_node_base_interface());
-    spin_thread_ = std::thread([this]() {executor_.spin();});
+    spin_thread_ = std::thread(
+      [this]() {
+        executor_.spin();
+        spin_finished_.store(true);
+      });
   }
 
   ~UnitreeMotionSwitcher()
   {
-    executor_.cancel();
+    // cancel() only stops a spin() that has already begun; repeat it until the
+    // thread reports that spin() returned, so a cancel racing the thread start
+    // cannot leave join() waiting forever.
+    while (!spin_finished_.load()) {
+      executor_.cancel();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     if (spin_thread_.joinable()) {
       spin_thread_.join();
     }
@@ -198,6 +209,7 @@ private:
   rclcpp::Subscription<Response>::SharedPtr response_sub_;
   rclcpp::executors::SingleThreadedExecutor executor_;
   std::thread spin_thread_;
+  std::atomic<bool> spin_finished_{false};
 
   std::mutex call_mutex_;
   std::mutex response_mutex_;

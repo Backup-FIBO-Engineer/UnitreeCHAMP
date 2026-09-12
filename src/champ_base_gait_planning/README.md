@@ -123,11 +123,14 @@ ros2 launch champ_base_gait_planning unitree_sim2real.launch.py robot:=go2 netwo
 `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` and a `CYCLONEDDS_URI` pinned to that
 NIC for every node it starts (the same two variables unitree_ros2 `setup.sh`
 exports); leave it empty when `setup.sh` is already sourced. The launch never
-sets `ROS_DOMAIN_ID`: the robot is on domain 0, so keep it 0 / unset. After
-motion_switcher `ReleaseMode` the bridge holds the measured pose, then ramps
-to the CHAMP targets over `ramp_sec` at `publish_rate`. If CHAMP commands stop
-for `command_timeout_sec`, the last pose is held with extra damping. Never mix
-this with the Sport API.
+sets `ROS_DOMAIN_ID`: the robot is on domain 0, so keep it 0 / unset. The
+bridge first asks the motion_switcher to `ReleaseMode` and, like the
+unitree_ros2 stand examples, publishes no LowCmd while the robot reports a
+motion service still active (it retries every second; if the service never
+answers it gives up after 6 attempts and continues). Then it holds the
+measured pose and ramps to the CHAMP targets over `ramp_sec` at
+`publish_rate`. If CHAMP commands stop for `command_timeout_sec`, the last
+pose is held with extra damping. Never mix this with the Sport API.
 
 Quick checks on the robot network: `ros2 topic hz /lowstate` (~500 Hz) and
 `ros2 topic echo /api/motion_switcher/response --once` after a `ReleaseMode`.
