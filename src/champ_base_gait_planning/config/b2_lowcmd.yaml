@@ -10,7 +10,7 @@
     network_interface: ""
     publish_rate: 500.0
     # unitree_sdk2 example/b2/b2_stand_example.cpp: Kp 1000, Kd 10, mode 0x0A.
-    # B2 weighs ~70 kg (URDF); Go2-level gains (40/1) cannot hold it up.
+    # B2 weighs ~70 kg (URDF); Go2-level gains (60/5) cannot hold it up.
     kp: 1000.0
     kd: 10.0
     tau: 0.0

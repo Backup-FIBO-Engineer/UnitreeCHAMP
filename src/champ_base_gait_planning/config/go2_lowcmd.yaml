@@ -9,9 +9,9 @@
     imu_topic: imu/data
     network_interface: ""
     publish_rate: 500.0
-    # unitree_sdk2 example/go2/go2_stand_example.cpp: Kp 40, Kd 1, mode 0x01.
-    kp: 40.0
-    kd: 1.0
+    # unitree_sdk2 example/go2/go2_stand_example.cpp: Kp 60, Kd 5, mode 0x01.
+    kp: 60.0
+    kd: 5.0
     tau: 0.0
     motor_mode: 1  # 0x01 PMSM servo
     command_timeout_sec: 0.5
