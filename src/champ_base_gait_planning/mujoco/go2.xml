@@ -4,15 +4,42 @@
     Source: go2.urdf + config/go2_*.yaml.
     Collision = URDF primitives, robot self-collision off (contype 1 / conaffinity 0),
     floor conaffinity 1. Requires MuJoCo >= 3.1 (position kv).
+    Visual = URDF meshes converted to assets/go2/*.obj (group 1, no contacts);
+    collision primitives are in group 3 (hidden by default, press 3 in the viewer).
   -->
-  <compiler angle="radian" autolimits="true" inertiafromgeom="false"/>
+  <compiler angle="radian" autolimits="true" inertiafromgeom="false" meshdir="assets/go2"/>
   <option timestep="0.001" gravity="0 0 -9.81" integrator="implicitfast"/>
 
   <default>
     <joint damping="0.5" armature="0.01" frictionloss="0.05"/>
     <geom friction="1.2 0.005 0.0001" condim="3" contype="1" conaffinity="0"/>
     <position ctrllimited="true" forcelimited="true"/>
+    <default class="collision">
+      <geom group="3"/>
+    </default>
+    <default class="visual">
+      <geom type="mesh" group="1" contype="0" conaffinity="0" mass="0"/>
+    </default>
   </default>
+
+  <asset>
+    <mesh name="Go2_base_0" file="Go2_base_0.obj"/>
+    <mesh name="Go2_base_1" file="Go2_base_1.obj"/>
+    <mesh name="Go2_base_2" file="Go2_base_2.obj"/>
+    <mesh name="Go2_base_3" file="Go2_base_3.obj"/>
+    <mesh name="Go2_base_4" file="Go2_base_4.obj"/>
+    <mesh name="Go2_hip_0" file="Go2_hip_0.obj"/>
+    <mesh name="Go2_hip_1" file="Go2_hip_1.obj"/>
+    <mesh name="Go2_thigh_0" file="Go2_thigh_0.obj"/>
+    <mesh name="Go2_thigh_1" file="Go2_thigh_1.obj"/>
+    <mesh name="Go2_calf_0" file="Go2_calf_0.obj"/>
+    <mesh name="Go2_calf_1" file="Go2_calf_1.obj"/>
+    <mesh name="Go2_foot_0" file="Go2_foot_0.obj"/>
+    <mesh name="Go2_thigh_mirror_0" file="Go2_thigh_mirror_0.obj"/>
+    <mesh name="Go2_thigh_mirror_1" file="Go2_thigh_mirror_1.obj"/>
+    <mesh name="Go2_calf_mirror_0" file="Go2_calf_mirror_0.obj"/>
+    <mesh name="Go2_calf_mirror_1" file="Go2_calf_mirror_1.obj"/>
+  </asset>
 
   <worldbody>
     <geom name="floor" type="plane" size="10 10 0.1" contype="1" conaffinity="1" rgba="0.8 0.8 0.8 1"/>
@@ -22,38 +49,50 @@
     <body name="base" pos="0 0 0.342">
       <freejoint name="root"/>
       <inertial pos="0.021112 0 -0.005366" mass="6.921" fullinertia="0.02448 0.098077 0.107 0.00012166 0.0014849 -3.12E-05"/>
-      <geom name="base_collision" type="box" size="0.1881 0.04675 0.057" rgba="0.2 0.3 0.6 1"/>
+      <geom name="base_collision" class="collision" type="box" size="0.1881 0.04675 0.057" rgba="0.2 0.3 0.6 1"/>
+      <geom name="base_visual_0" class="visual" mesh="Go2_base_0" rgba="0.6717055 0.6924257 0.7742702 1"/>
+      <geom name="base_visual_1" class="visual" mesh="Go2_base_1" rgba="1 1 1 1"/>
+      <geom name="base_visual_2" class="visual" mesh="Go2_base_2" rgba="0.009018 0.009018 0.009018 1"/>
+      <geom name="base_visual_3" class="visual" mesh="Go2_base_3" rgba="0.01341 0.01341 0.01341 1"/>
+      <geom name="base_visual_4" class="visual" mesh="Go2_base_4" rgba="0.023455 0.023455 0.023455 1"/>
       <body name="Head_upper" pos="0.285 0 0.01">
         <inertial pos="0 0 0" mass="0.001" fullinertia="9.6e-06 9.6e-06 9.6e-06 0 0 0"/>
-        <geom name="Head_upper_collision" type="cylinder" size="0.05 0.045" rgba="0.5 0.5 0.5 1"/>
+        <geom name="Head_upper_collision" class="collision" type="cylinder" size="0.05 0.045" rgba="0.5 0.5 0.5 1"/>
         <body name="Head_lower" pos="0.008 0 -0.07">
           <inertial pos="0 0 0" mass="0.001" fullinertia="9.6e-06 9.6e-06 9.6e-06 0 0 0"/>
-          <geom name="Head_lower_collision" type="sphere" size="0.047" rgba="0.5 0.5 0.5 1"/>
+          <geom name="Head_lower_collision" class="collision" type="sphere" size="0.047" rgba="0.5 0.5 0.5 1"/>
         </body>
       </body>
       <body name="FL_hip" pos="0.1934 0.0465 0">
         <joint name="FL_hip_joint" type="hinge" axis="1 0 0" range="-1.0472 1.0472"/>
         <inertial pos="-0.0054 0.00194 -0.000105" mass="0.678" fullinertia="0.00048 0.000884 0.000596 -3.01E-06 1.11E-06 -1.42E-06"/>
-        <geom name="FL_hip_collision" type="cylinder" size="0.046 0.02" pos="0 0.08 0" euler="1.5707963267948966 0 0" rgba="0.35 0.35 0.35 1"/>
+        <geom name="FL_hip_collision" class="collision" type="cylinder" size="0.046 0.02" pos="0 0.08 0" quat="0.7071067811865476 0.7071067811865475 0.0 0.0" rgba="0.35 0.35 0.35 1"/>
+        <geom name="FL_hip_visual_0" class="visual" mesh="Go2_hip_0" rgba="0.6717055 0.6924257 0.7742702 1"/>
+        <geom name="FL_hip_visual_1" class="visual" mesh="Go2_hip_1" rgba="0.9 0.95 0.95 1"/>
         <body name="FL_thigh" pos="0 0.0955 0">
           <joint name="FL_thigh_joint" type="hinge" axis="0 1 0" range="-1.5708 3.4907"/>
           <inertial pos="-0.00374 -0.0223 -0.0327" mass="1.152" fullinertia="0.00584 0.0058 0.00103 8.72E-05 -0.000289 0.000808"/>
-          <geom name="FL_thigh_collision" type="box" size="0.1065 0.01225 0.017" pos="0 0 -0.1065" euler="0 1.5707963267948966 0" rgba="0.35 0.35 0.35 1"/>
+          <geom name="FL_thigh_collision" class="collision" type="box" size="0.1065 0.01225 0.017" pos="0 0 -0.1065" quat="0.7071067811865476 0.0 0.7071067811865475 0.0" rgba="0.35 0.35 0.35 1"/>
+          <geom name="FL_thigh_visual_0" class="visual" mesh="Go2_thigh_0" rgba="0.6717055 0.6924257 0.7742702 1"/>
+          <geom name="FL_thigh_visual_1" class="visual" mesh="Go2_thigh_1" rgba="0.9 0.95 0.95 1"/>
           <body name="FL_calf" pos="0 0 -0.213">
             <joint name="FL_calf_joint" type="hinge" axis="0 1 0" range="-2.7227 -0.83776"/>
             <inertial pos="0.00548 -0.000975 -0.115" mass="0.154" fullinertia="0.00108 0.0011 3.29E-05 3.4E-07 1.72E-05 8.28E-06"/>
-            <geom name="FL_calf_collision" type="cylinder" size="0.012 0.06" pos="0.008 0 -0.06" euler="0 -0.21 0" rgba="0.35 0.35 0.35 1"/>
-            <body name="FL_calflower" pos="0.020 0 -0.148" euler="0 0.05 0">
+            <geom name="FL_calf_collision" class="collision" type="cylinder" size="0.012 0.06" pos="0.008 0 -0.06" quat="0.9944925627484974 0.0 -0.10480716882888248 0.0" rgba="0.35 0.35 0.35 1"/>
+            <geom name="FL_calf_visual_0" class="visual" mesh="Go2_calf_0" rgba="0 0 0 1"/>
+            <geom name="FL_calf_visual_1" class="visual" mesh="Go2_calf_1" rgba="0.6717055 0.6924257 0.7742702 1"/>
+            <body name="FL_calflower" pos="0.020 0 -0.148" quat="0.9996875162757026 0.0 0.024997395914712332 0.0">
               <!-- FL_calflower: massless in URDF -->
-              <geom name="FL_calflower_collision" type="cylinder" size="0.011 0.0325" rgba="0.5 0.5 0.5 1"/>
-              <body name="FL_calflower1" pos="-0.01 0 -0.04" euler="0 0.48 0">
+              <geom name="FL_calflower_collision" class="collision" type="cylinder" size="0.011 0.0325" rgba="0.5 0.5 0.5 1"/>
+              <body name="FL_calflower1" pos="-0.01 0 -0.04" quat="0.9713379748520297 0.0 0.23770262642713458 0.0">
                 <!-- FL_calflower1: massless in URDF -->
-                <geom name="FL_calflower1_collision" type="cylinder" size="0.0155 0.015" rgba="0.5 0.5 0.5 1"/>
+                <geom name="FL_calflower1_collision" class="collision" type="cylinder" size="0.0155 0.015" rgba="0.5 0.5 0.5 1"/>
               </body>
             </body>
             <body name="FL_foot" pos="0 0 -0.213">
               <inertial pos="0 0 0" mass="0.04" fullinertia="9.6e-06 9.6e-06 9.6e-06 0 0 0"/>
-              <geom name="FL_foot_collision" type="sphere" size="0.022" pos="-0.002 0 0" rgba="0.9 0.4 0.2 1"/>
+              <geom name="FL_foot_collision" class="collision" type="sphere" size="0.022" pos="-0.002 0 0" rgba="0.9 0.4 0.2 1"/>
+              <geom name="FL_foot_visual" class="visual" mesh="Go2_foot_0" rgba="0 0 0 1"/>
               <site name="FL_foot_site" pos="0 0 0" size="0.006"/>
             </body>
           </body>
@@ -71,26 +110,33 @@
       <body name="FR_hip" pos="0.1934 -0.0465 0">
         <joint name="FR_hip_joint" type="hinge" axis="1 0 0" range="-1.0472 1.0472"/>
         <inertial pos="-0.0054 -0.00194 -0.000105" mass="0.678" fullinertia="0.00048 0.000884 0.000596 3.01E-06 1.11E-06 1.42E-06"/>
-        <geom name="FR_hip_collision" type="cylinder" size="0.046 0.02" pos="0 -0.08 0" euler="1.5707963267948966 0 0" rgba="0.35 0.35 0.35 1"/>
+        <geom name="FR_hip_collision" class="collision" type="cylinder" size="0.046 0.02" pos="0 -0.08 0" quat="0.7071067811865476 0.7071067811865475 0.0 0.0" rgba="0.35 0.35 0.35 1"/>
+        <geom name="FR_hip_visual_0" class="visual" mesh="Go2_hip_0" quat="4.632679487995776e-05 0.999999998926914 0.0 0.0" rgba="0.6717055 0.6924257 0.7742702 1"/>
+        <geom name="FR_hip_visual_1" class="visual" mesh="Go2_hip_1" quat="4.632679487995776e-05 0.999999998926914 0.0 0.0" rgba="0.9 0.95 0.95 1"/>
         <body name="FR_thigh" pos="0 -0.0955 0">
           <joint name="FR_thigh_joint" type="hinge" axis="0 1 0" range="-1.5708 3.4907"/>
           <inertial pos="-0.00374 0.0223 -0.0327" mass="1.152" fullinertia="0.00584 0.0058 0.00103 -8.72E-05 -0.000289 -0.000808"/>
-          <geom name="FR_thigh_collision" type="box" size="0.1065 0.01225 0.017" pos="0 0 -0.1065" euler="0 1.5707963267948966 0" rgba="0.35 0.35 0.35 1"/>
+          <geom name="FR_thigh_collision" class="collision" type="box" size="0.1065 0.01225 0.017" pos="0 0 -0.1065" quat="0.7071067811865476 0.0 0.7071067811865475 0.0" rgba="0.35 0.35 0.35 1"/>
+          <geom name="FR_thigh_visual_0" class="visual" mesh="Go2_thigh_mirror_0" rgba="0.6717055 0.6924257 0.7742702 1"/>
+          <geom name="FR_thigh_visual_1" class="visual" mesh="Go2_thigh_mirror_1" rgba="0.9 0.95 0.95 1"/>
           <body name="FR_calf" pos="0 0 -0.213">
             <joint name="FR_calf_joint" type="hinge" axis="0 1 0" range="-2.7227 -0.83776"/>
             <inertial pos="0.00548 0.000975 -0.115" mass="0.154" fullinertia="0.00108 0.0011 3.29E-05 -3.4E-07 1.72E-05 -8.28E-06"/>
-            <geom name="FR_calf_collision" type="cylinder" size="0.013 0.06" pos="0.01 0 -0.06" euler="0 -0.2 0" rgba="0.35 0.35 0.35 1"/>
-            <body name="FR_calflower" pos="0.020 0 -0.148" euler="0 0.05 0">
+            <geom name="FR_calf_collision" class="collision" type="cylinder" size="0.013 0.06" pos="0.01 0 -0.06" quat="0.9950041652780258 0.0 -0.09983341664682815 0.0" rgba="0.35 0.35 0.35 1"/>
+            <geom name="FR_calf_visual_0" class="visual" mesh="Go2_calf_mirror_0" rgba="0 0 0 1"/>
+            <geom name="FR_calf_visual_1" class="visual" mesh="Go2_calf_mirror_1" rgba="0.6717055 0.6924257 0.7742702 1"/>
+            <body name="FR_calflower" pos="0.020 0 -0.148" quat="0.9996875162757026 0.0 0.024997395914712332 0.0">
               <!-- FR_calflower: massless in URDF -->
-              <geom name="FR_calflower_collision" type="cylinder" size="0.011 0.0325" rgba="0.5 0.5 0.5 1"/>
-              <body name="FR_calflower1" pos="-0.01 0 -0.04" euler="0 0.48 0">
+              <geom name="FR_calflower_collision" class="collision" type="cylinder" size="0.011 0.0325" rgba="0.5 0.5 0.5 1"/>
+              <body name="FR_calflower1" pos="-0.01 0 -0.04" quat="0.9713379748520297 0.0 0.23770262642713458 0.0">
                 <!-- FR_calflower1: massless in URDF -->
-                <geom name="FR_calflower1_collision" type="cylinder" size="0.0155 0.015" rgba="0.5 0.5 0.5 1"/>
+                <geom name="FR_calflower1_collision" class="collision" type="cylinder" size="0.0155 0.015" rgba="0.5 0.5 0.5 1"/>
               </body>
             </body>
             <body name="FR_foot" pos="0 0 -0.213">
               <inertial pos="0 0 0" mass="0.04" fullinertia="9.6e-06 9.6e-06 9.6e-06 0 0 0"/>
-              <geom name="FR_foot_collision" type="sphere" size="0.022" pos="-0.002 0 0" rgba="0.9 0.4 0.2 1"/>
+              <geom name="FR_foot_collision" class="collision" type="sphere" size="0.022" pos="-0.002 0 0" rgba="0.9 0.4 0.2 1"/>
+              <geom name="FR_foot_visual" class="visual" mesh="Go2_foot_0" rgba="0 0 0 1"/>
               <site name="FR_foot_site" pos="0 0 0" size="0.006"/>
             </body>
           </body>
@@ -108,26 +154,33 @@
       <body name="RL_hip" pos="-0.1934 0.0465 0">
         <joint name="RL_hip_joint" type="hinge" axis="1 0 0" range="-1.0472 1.0472"/>
         <inertial pos="0.0054 0.00194 -0.000105" mass="0.678" fullinertia="0.00048 0.000884 0.000596 3.01E-06 -1.11E-06 -1.42E-06"/>
-        <geom name="RL_hip_collision" type="cylinder" size="0.046 0.02" pos="0 0.08 0" euler="1.5707963267948966 0 0" rgba="0.35 0.35 0.35 1"/>
+        <geom name="RL_hip_collision" class="collision" type="cylinder" size="0.046 0.02" pos="0 0.08 0" quat="0.7071067811865476 0.7071067811865475 0.0 0.0" rgba="0.35 0.35 0.35 1"/>
+        <geom name="RL_hip_visual_0" class="visual" mesh="Go2_hip_0" quat="4.632679487995776e-05 0.0 0.999999998926914 0.0" rgba="0.6717055 0.6924257 0.7742702 1"/>
+        <geom name="RL_hip_visual_1" class="visual" mesh="Go2_hip_1" quat="4.632679487995776e-05 0.0 0.999999998926914 0.0" rgba="0.9 0.95 0.95 1"/>
         <body name="RL_thigh" pos="0 0.0955 0">
           <joint name="RL_thigh_joint" type="hinge" axis="0 1 0" range="-0.5236 4.5379"/>
           <inertial pos="-0.00374 -0.0223 -0.0327" mass="1.152" fullinertia="0.00584 0.0058 0.00103 8.72E-05 -0.000289 0.000808"/>
-          <geom name="RL_thigh_collision" type="box" size="0.1065 0.01225 0.017" pos="0 0 -0.1065" euler="0 1.5707963267948966 0" rgba="0.35 0.35 0.35 1"/>
+          <geom name="RL_thigh_collision" class="collision" type="box" size="0.1065 0.01225 0.017" pos="0 0 -0.1065" quat="0.7071067811865476 0.0 0.7071067811865475 0.0" rgba="0.35 0.35 0.35 1"/>
+          <geom name="RL_thigh_visual_0" class="visual" mesh="Go2_thigh_0" rgba="0.6717055 0.6924257 0.7742702 1"/>
+          <geom name="RL_thigh_visual_1" class="visual" mesh="Go2_thigh_1" rgba="0.9 0.95 0.95 1"/>
           <body name="RL_calf" pos="0 0 -0.213">
             <joint name="RL_calf_joint" type="hinge" axis="0 1 0" range="-2.7227 -0.83776"/>
             <inertial pos="0.00548 -0.000975 -0.115" mass="0.154" fullinertia="0.00108 0.0011 3.29E-05 3.4E-07 1.72E-05 8.28E-06"/>
-            <geom name="RL_calf_collision" type="cylinder" size="0.013 0.06" pos="0.01 0 -0.06" euler="0 -0.2 0" rgba="0.35 0.35 0.35 1"/>
-            <body name="RL_calflower" pos="0.020 0 -0.148" euler="0 0.05 0">
+            <geom name="RL_calf_collision" class="collision" type="cylinder" size="0.013 0.06" pos="0.01 0 -0.06" quat="0.9950041652780258 0.0 -0.09983341664682815 0.0" rgba="0.35 0.35 0.35 1"/>
+            <geom name="RL_calf_visual_0" class="visual" mesh="Go2_calf_0" rgba="0 0 0 1"/>
+            <geom name="RL_calf_visual_1" class="visual" mesh="Go2_calf_1" rgba="0.6717055 0.6924257 0.7742702 1"/>
+            <body name="RL_calflower" pos="0.020 0 -0.148" quat="0.9996875162757026 0.0 0.024997395914712332 0.0">
               <!-- RL_calflower: massless in URDF -->
-              <geom name="RL_calflower_collision" type="cylinder" size="0.011 0.0325" rgba="0.5 0.5 0.5 1"/>
-              <body name="RL_calflower1" pos="-0.01 0 -0.04" euler="0 0.48 0">
+              <geom name="RL_calflower_collision" class="collision" type="cylinder" size="0.011 0.0325" rgba="0.5 0.5 0.5 1"/>
+              <body name="RL_calflower1" pos="-0.01 0 -0.04" quat="0.9713379748520297 0.0 0.23770262642713458 0.0">
                 <!-- RL_calflower1: massless in URDF -->
-                <geom name="RL_calflower1_collision" type="cylinder" size="0.0155 0.015" rgba="0.5 0.5 0.5 1"/>
+                <geom name="RL_calflower1_collision" class="collision" type="cylinder" size="0.0155 0.015" rgba="0.5 0.5 0.5 1"/>
               </body>
             </body>
             <body name="RL_foot" pos="0 0 -0.213">
               <inertial pos="0 0 0" mass="0.04" fullinertia="9.6e-06 9.6e-06 9.6e-06 0 0 0"/>
-              <geom name="RL_foot_collision" type="sphere" size="0.022" pos="-0.002 0 0" rgba="0.9 0.4 0.2 1"/>
+              <geom name="RL_foot_collision" class="collision" type="sphere" size="0.022" pos="-0.002 0 0" rgba="0.9 0.4 0.2 1"/>
+              <geom name="RL_foot_visual" class="visual" mesh="Go2_foot_0" rgba="0 0 0 1"/>
               <site name="RL_foot_site" pos="0 0 0" size="0.006"/>
             </body>
           </body>
@@ -145,26 +198,33 @@
       <body name="RR_hip" pos="-0.1934 -0.0465 0">
         <joint name="RR_hip_joint" type="hinge" axis="1 0 0" range="-1.0472 1.0472"/>
         <inertial pos="0.0054 -0.00194 -0.000105" mass="0.678" fullinertia="0.00048 0.000884 0.000596 -3.01E-06 -1.11E-06 1.42E-06"/>
-        <geom name="RR_hip_collision" type="cylinder" size="0.046 0.02" pos="0 -0.08 0" euler="1.5707963267948966 0 0" rgba="0.35 0.35 0.35 1"/>
+        <geom name="RR_hip_collision" class="collision" type="cylinder" size="0.046 0.02" pos="0 -0.08 0" quat="0.7071067811865476 0.7071067811865475 0.0 0.0" rgba="0.35 0.35 0.35 1"/>
+        <geom name="RR_hip_visual_0" class="visual" mesh="Go2_hip_0" quat="2.14617192384968e-09 4.632679483024512e-05 4.632679483024512e-05 -0.9999999978538281" rgba="0.6717055 0.6924257 0.7742702 1"/>
+        <geom name="RR_hip_visual_1" class="visual" mesh="Go2_hip_1" quat="2.14617192384968e-09 4.632679483024512e-05 4.632679483024512e-05 -0.9999999978538281" rgba="0.9 0.95 0.95 1"/>
         <body name="RR_thigh" pos="0 -0.0955 0">
           <joint name="RR_thigh_joint" type="hinge" axis="0 1 0" range="-0.5236 4.5379"/>
           <inertial pos="-0.00374 0.0223 -0.0327" mass="1.152" fullinertia="0.00584 0.0058 0.00103 -8.72E-05 -0.000289 -0.000808"/>
-          <geom name="RR_thigh_collision" type="box" size="0.1065 0.01225 0.017" pos="0 0 -0.1065" euler="0 1.5707963267948966 0" rgba="0.35 0.35 0.35 1"/>
+          <geom name="RR_thigh_collision" class="collision" type="box" size="0.1065 0.01225 0.017" pos="0 0 -0.1065" quat="0.7071067811865476 0.0 0.7071067811865475 0.0" rgba="0.35 0.35 0.35 1"/>
+          <geom name="RR_thigh_visual_0" class="visual" mesh="Go2_thigh_mirror_0" rgba="0.6717055 0.6924257 0.7742702 1"/>
+          <geom name="RR_thigh_visual_1" class="visual" mesh="Go2_thigh_mirror_1" rgba="0.9 0.95 0.95 1"/>
           <body name="RR_calf" pos="0 0 -0.213">
             <joint name="RR_calf_joint" type="hinge" axis="0 1 0" range="-2.7227 -0.83776"/>
             <inertial pos="0.00548 0.000975 -0.115" mass="0.154" fullinertia="0.00108 0.0011 3.29E-05 -3.4E-07 1.72E-05 -8.28E-06"/>
-            <geom name="RR_calf_collision" type="cylinder" size="0.013 0.06" pos="0.01 0 -0.06" euler="0 -0.2 0" rgba="0.35 0.35 0.35 1"/>
-            <body name="RR_calflower" pos="0.020 0 -0.148" euler="0 0.05 0">
+            <geom name="RR_calf_collision" class="collision" type="cylinder" size="0.013 0.06" pos="0.01 0 -0.06" quat="0.9950041652780258 0.0 -0.09983341664682815 0.0" rgba="0.35 0.35 0.35 1"/>
+            <geom name="RR_calf_visual_0" class="visual" mesh="Go2_calf_mirror_0" rgba="0 0 0 1"/>
+            <geom name="RR_calf_visual_1" class="visual" mesh="Go2_calf_mirror_1" rgba="0.6717055 0.6924257 0.7742702 1"/>
+            <body name="RR_calflower" pos="0.020 0 -0.148" quat="0.9996875162757026 0.0 0.024997395914712332 0.0">
               <!-- RR_calflower: massless in URDF -->
-              <geom name="RR_calflower_collision" type="cylinder" size="0.011 0.0325" rgba="0.5 0.5 0.5 1"/>
-              <body name="RR_calflower1" pos="-0.01 0 -0.04" euler="0 0.48 0">
+              <geom name="RR_calflower_collision" class="collision" type="cylinder" size="0.011 0.0325" rgba="0.5 0.5 0.5 1"/>
+              <body name="RR_calflower1" pos="-0.01 0 -0.04" quat="0.9713379748520297 0.0 0.23770262642713458 0.0">
                 <!-- RR_calflower1: massless in URDF -->
-                <geom name="RR_calflower1_collision" type="cylinder" size="0.0155 0.015" rgba="0.5 0.5 0.5 1"/>
+                <geom name="RR_calflower1_collision" class="collision" type="cylinder" size="0.0155 0.015" rgba="0.5 0.5 0.5 1"/>
               </body>
             </body>
             <body name="RR_foot" pos="0 0 -0.213">
               <inertial pos="0 0 0" mass="0.04" fullinertia="9.6e-06 9.6e-06 9.6e-06 0 0 0"/>
-              <geom name="RR_foot_collision" type="sphere" size="0.022" pos="-0.002 0 0" rgba="0.9 0.4 0.2 1"/>
+              <geom name="RR_foot_collision" class="collision" type="sphere" size="0.022" pos="-0.002 0 0" rgba="0.9 0.4 0.2 1"/>
+              <geom name="RR_foot_visual" class="visual" mesh="Go2_foot_0" rgba="0 0 0 1"/>
               <site name="RR_foot_site" pos="0 0 0" size="0.006"/>
             </body>
           </body>
@@ -182,7 +242,7 @@
       <body name="imu" pos="-0.02557 0 0.04232">
         <!-- imu: massless in URDF -->
       </body>
-      <body name="radar" pos="0.28945 0 -0.046825" euler="0 2.8782 0">
+      <body name="radar" pos="0.28945 0 -0.046825" quat="0.1313159683094573 0.0 0.9913405653290647 0.0">
         <!-- radar: massless in URDF -->
       </body>
       <body name="front_camera" pos="0.32715 -0.00003 0.04297">

@@ -13,7 +13,10 @@ The MJCF is compiled with MuJoCo and compared body by body against the URDF:
     link that has one in both files;
   * URDF collision primitives (box/cylinder/sphere) that exist as geoms named
     <link>_collision[_n] match in type, size and pose; mesh collisions are
-    reported and skipped.
+    reported and skipped;
+  * URDF visual meshes emitted as <link>_visual[_n][_part] geoms are meshes on
+    the right body at the URDF visual origin, never collide (contype =
+    conaffinity = 0) and sit in group 1 while collision primitives are in group 3.
 Requires the `mujoco` Python package. Does not need ROS.
 """
 
@@ -245,6 +248,46 @@ def main() -> int:
                 failures += result(f'{name} orientation', close(rpy_to_matrix(col.rpy), quat_to_matrix(model.geom_quat[gid]), 1e-9))
             failures += result(f'{name} collides with the floor', int(model.geom_contype[gid]) & int(model.geom_conaffinity[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor")]) != 0)
     print(f'[INFO] {primitives} URDF collision primitives compared, {meshes} mesh collisions skipped')
+
+    # -- visual meshes ----------------------------------------------------------------------
+    # generate_mjcf.py names them <link>_visual[_n][_part]; they must never take part in
+    # contacts or carry mass (inertials are explicit), only be drawn.
+    visual_ids = [g for g in range(model.ngeom) if '_visual' in model.geom(g).name]
+    collision_ids = [g for g in range(model.ngeom) if '_collision' in model.geom(g).name]
+    if visual_ids:
+        failures += result('visual geoms have contype = conaffinity = 0',
+                           all(int(model.geom_contype[g]) == 0 and int(model.geom_conaffinity[g]) == 0 for g in visual_ids),
+                           f'{len(visual_ids)} geoms')
+        failures += result('visual geoms are drawn in group 1, collision primitives hidden in group 3',
+                           all(int(model.geom_group[g]) == 1 for g in visual_ids)
+                           and all(int(model.geom_group[g]) == 3 for g in collision_ids))
+        for link in urdf.links.values():
+            if body_id(link.name) < 0:
+                continue
+            for index, vis in enumerate(link.visuals):
+                if vis.geometry != 'mesh':
+                    continue
+                base_name = f'{link.name}_visual' if index == 0 else f'{link.name}_visual_{index}'
+                gids = [g for g in visual_ids if model.geom(g).name == base_name
+                        or model.geom(g).name.startswith(base_name + '_')]
+                failures += result(f'{base_name} mesh geom(s) exist', len(gids) > 0, vis.attrib.get('filename', ''))
+                for g in gids:
+                    failures += result(f'{model.geom(g).name} is a mesh on body {link.name}',
+                                       model.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH
+                                       and model.body(int(model.geom_bodyid[g])).name == link.name)
+                    # MuJoCo stores mesh geoms in the mesh's centroid/principal frame:
+                    # geom_quat = q_user * mesh_quat, geom_pos = pos_user + R_user @ mesh_pos.
+                    mid = int(model.geom_dataid[g])
+                    r_user = quat_to_matrix(model.geom_quat[g]) @ quat_to_matrix(model.mesh_quat[mid]).T
+                    pos_user = model.geom_pos[g] - r_user @ model.mesh_pos[mid]
+                    xyz = np.array([float(v) for v in vis.xyz_text.split()])
+                    failures += result(f'{model.geom(g).name} pos', close(xyz, pos_user, 1e-9),
+                                       f'urdf={xyz} mjcf={pos_user}')
+                    failures += result(f'{model.geom(g).name} orientation',
+                                       close(rpy_to_matrix([float(v) for v in vis.rpy_text.split()]), r_user, 1e-9))
+        print(f'[INFO] {len(visual_ids)} visual mesh geoms checked')
+    else:
+        print('[INFO] no visual mesh geoms in the MJCF (primitives only)')
 
     # -- feet ------------------------------------------------------------------------------
     for leg, geom, site in zip(LEGS, foot_geom_names(params, sim), foot_site_names(params, sim)):

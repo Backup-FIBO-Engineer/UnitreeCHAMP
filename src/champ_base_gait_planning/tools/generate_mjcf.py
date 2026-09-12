@@ -8,13 +8,19 @@ Everything comes from the files of the selected robot:
   * collision geometry: the URDF <collision> primitives (box, cylinder, sphere);
     mesh collisions are skipped, so a robot whose URDF only has mesh collision
     needs a hand-written MJCF (see mujoco/xgo.xml)
+  * visual geometry: the URDF <visual> meshes (dae/stl), converted by
+    tools/champ_mesh_assets.py into mujoco/assets/<robot>/*.obj (one per
+    material, coloured from the URDF/COLLADA materials) and emitted as
+    non-colliding group-1 mesh geoms; collision primitives go to group 3 so
+    the viewer shows the real robot (press 3 to overlay the primitives)
   * actuated joints: config/<robot>_joints.yaml (joints_map, CHAMP order)
   * base/foot links: config/<robot>_links.yaml
   * spawn height: gait.nominal_height from config/<robot>_gait.yaml
   * simulator tuning: sim.* from config/<robot>_sim.yaml
 
-Numeric URDF attribute strings are copied verbatim so that
-tools/validate_mujoco_against_urdf.py compares equal at float precision.
+Numeric URDF attribute strings (xyz, sizes, limits, inertia) are copied
+verbatim so that tools/validate_mujoco_against_urdf.py compares equal at float
+precision; rpy origins become quaternions (see origin_attrs).
 """
 
 from __future__ import annotations
@@ -23,16 +29,21 @@ import argparse
 import math
 import sys
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from champ_mesh_assets import MeshAssets, convert_robot_meshes  # noqa: E402
 from champ_robot_files import (  # noqa: E402
     CHAIN_LENGTH, LEGS, SOURCE_PACKAGE_DIR, RobotFiles, Urdf, UrdfCollision, UrdfLink,
-    champ_joint_names, leg_chains, load_ros_params, load_urdf, resolve_robot_files,
+    UrdfVisual, champ_joint_names, leg_chains, load_ros_params, load_urdf,
+    resolve_robot_files,
 )
 
 MASSLESS = 1e-6
+PRIMITIVES = ('box', 'cylinder', 'sphere')
+VISUAL_GROUP = 1  # shown by default in the MuJoCo viewers
+COLLISION_GROUP = 3  # hidden by default; toggled with key 3
 
 SIM_DEFAULTS = {
     'actuator_kp_hip': 80.0,
@@ -80,33 +91,56 @@ def is_zero(text: str) -> bool:
     return all(abs(float(v)) < 1e-12 for v in text.split())
 
 
-def geom_xml(name: str, collision: UrdfCollision, rgba: str, indent: str) -> str:
-    """MuJoCo geom for a URDF collision primitive; None for meshes."""
-    attrib = collision.attrib
-    if collision.geometry == 'box':
+def primitive_shape(geometry: str, attrib: Dict[str, str]) -> str:
+    """MuJoCo type/size attributes for a URDF box, cylinder or sphere."""
+    if geometry == 'box':
         sx, sy, sz = (float(v) for v in attrib['size'].split())
-        shape = f'type="box" size="{num(sx / 2)} {num(sy / 2)} {num(sz / 2)}"'
-    elif collision.geometry == 'cylinder':
-        shape = (f'type="cylinder" size="{attrib["radius"]} '
-                 f'{num(float(attrib["length"]) / 2)}"')
-    elif collision.geometry == 'sphere':
-        shape = f'type="sphere" size="{attrib["radius"]}"'
-    else:
+        return f'type="box" size="{num(sx / 2)} {num(sy / 2)} {num(sz / 2)}"'
+    if geometry == 'cylinder':
+        return f'type="cylinder" size="{attrib["radius"]} {num(float(attrib["length"]) / 2)}"'
+    if geometry == 'sphere':
+        return f'type="sphere" size="{attrib["radius"]}"'
+    raise ValueError(f'not a primitive: {geometry}')
+
+
+def origin_attrs(xyz_text: str, rpy_text: str) -> List[str]:
+    """pos/quat attributes for a URDF <origin>.
+
+    URDF rpy is R = Rz(yaw) Ry(pitch) Rx(roll). MuJoCo's default euler
+    sequence "xyz" composes the other way round (Rx Ry Rz), which only agrees
+    when at most one angle is non-zero, so the rotation is emitted as a
+    quaternion instead of copying the rpy text into euler="...".
+    """
+    parts = []
+    if not is_zero(xyz_text):
+        parts.append(f'pos="{xyz_text}"')
+    if not is_zero(rpy_text):
+        parts.append(f'quat="{rpy_to_quat(rpy_text)}"')
+    return parts
+
+
+def geom_xml(name: str, collision: UrdfCollision, rgba: str, indent: str) -> str:
+    """MuJoCo collision geom for a URDF collision primitive; a comment for meshes."""
+    if collision.geometry not in PRIMITIVES:
         return f'{indent}<!-- {name}: URDF {collision.geometry} collision skipped -->'
-    parts = [f'<geom name="{name}" {shape}']
-    if not is_zero(collision.xyz_text):
-        parts.append(f'pos="{collision.xyz_text}"')
-    if not is_zero(collision.rpy_text):
-        # URDF rpy is fixed-axis roll, pitch, yaw = MuJoCo eulerseq "xyz" (extrinsic).
-        parts.append(f'euler="{collision.rpy_text}"')
+    parts = [f'<geom name="{name}" class="collision" {primitive_shape(collision.geometry, collision.attrib)}']
+    parts.extend(origin_attrs(collision.xyz_text, collision.rpy_text))
     parts.append(f'rgba="{rgba}"/>')
     return indent + ' '.join(parts)
 
 
+def rgba_text(values) -> str:
+    return ' '.join(f'{float(v):g}' for v in values)
+
+
 class Generator:
-    def __init__(self, files: RobotFiles) -> None:
+    def __init__(self, files: RobotFiles, visual_meshes: bool = True) -> None:
         self.files = files
         self.urdf: Urdf = load_urdf(files.urdf)
+        self.assets: Optional[MeshAssets] = None
+        if visual_meshes:
+            self.assets = convert_robot_meshes(files.package_dir, files.robot, self.urdf)
+        self.mesh_assets: Dict[str, str] = {}  # MuJoCo mesh name -> <mesh .../> line
         params = load_ros_params(files.gait_yaml, files.joints_yaml, files.links_yaml)
         self.sim = dict(SIM_DEFAULTS)
         self.sim.update(files.sim_params())
@@ -169,9 +203,50 @@ class Generator:
         rgba = self.color(link.name)
         for index, collision in enumerate(link.collisions):
             name = f'{link.name}_collision' if index == 0 else f'{link.name}_collision_{index}'
-            if collision.geometry not in ('box', 'cylinder', 'sphere'):
+            if collision.geometry not in PRIMITIVES:
                 self.skipped.append(f'{link.name} ({collision.geometry})')
             self.emit(geom_xml(name, collision, rgba, indent))
+        for index, visual in enumerate(link.visuals):
+            base = f'{link.name}_visual' if index == 0 else f'{link.name}_visual_{index}'
+            self.emit_visual(link, base, visual, indent)
+
+    def mesh_asset(self, part_name: str, file: str, scale_text: str) -> str:
+        """Register a <mesh> asset (one per file and scale) and return its name."""
+        name = part_name
+        attrs = [f'name="{name}"', f'file="{file}"']
+        if not all(abs(float(v) - 1.0) < 1e-12 for v in scale_text.split()):
+            suffix = '_'.join(f'{float(v):g}' for v in scale_text.split()).replace('.', 'p').replace('-', 'm')
+            name = f'{part_name}_s{suffix}'
+            attrs = [f'name="{name}"', f'file="{file}"', f'scale="{scale_text}"']
+        self.mesh_assets.setdefault(name, f'    <mesh {" ".join(attrs)}/>')
+        return name
+
+    def emit_visual(self, link: UrdfLink, base: str, visual: UrdfVisual, indent: str) -> None:
+        origin = origin_attrs(visual.xyz_text, visual.rpy_text)
+        if visual.geometry in PRIMITIVES:
+            parts = [f'<geom name="{base}" class="visual" {primitive_shape(visual.geometry, visual.attrib)}']
+            parts.extend(origin)
+            parts.append(f'rgba="{visual.rgba or self.color(link.name)}"/>')
+            self.emit(indent + ' '.join(parts))
+            return
+        if visual.geometry != 'mesh':
+            self.emit(f'{indent}<!-- {base}: URDF {visual.geometry} visual skipped -->')
+            return
+        filename = visual.attrib.get('filename', '')
+        entries = self.assets.entries.get(filename) if self.assets else None
+        if not entries:
+            self.emit(f'{indent}<!-- {base}: visual mesh {filename} not converted -->')
+            return
+        scale_text = visual.attrib.get('scale', '1 1 1')
+        for k, entry in enumerate(entries):
+            mesh = self.mesh_asset(entry.name, entry.file, scale_text)
+            # Colour: the URDF <material> named after the COLLADA effect wins, then the mesh file's own colour.
+            rgba = visual.materials.get(entry.material) or rgba_text(entry.rgba)
+            name = base if len(entries) == 1 else f'{base}_{k}'
+            parts = [f'<geom name="{name}" class="visual" mesh="{mesh}"']
+            parts.extend(origin)
+            parts.append(f'rgba="{rgba}"/>')
+            self.emit(indent + ' '.join(parts))
 
     def emit_body(self, link_name: str, depth: int) -> None:
         indent = '  ' * depth
@@ -181,11 +256,7 @@ class Generator:
             self.emit(f'{indent}<body name="{link_name}" pos="0 0 {num(self.spawn_height())}">')
             self.emit(f'{indent}  <freejoint name="root"/>')
         else:
-            attrs = [f'name="{link_name}"']
-            if not is_zero(joint.xyz_text):
-                attrs.append(f'pos="{joint.xyz_text}"')
-            if not is_zero(joint.rpy_text):
-                attrs.append(f'euler="{joint.rpy_text}"')
+            attrs = [f'name="{link_name}"'] + origin_attrs(joint.xyz_text, joint.rpy_text)
             self.emit(f'{indent}<body {" ".join(attrs)}>')
             if joint.type in ('revolute', 'continuous'):
                 jattrs = [f'name="{joint.name}"', 'type="hinge"', f'axis="{joint.axis_text}"']
@@ -224,14 +295,32 @@ class Generator:
             if self.urdf.joints[name].type not in ('revolute', 'continuous'):
                 raise RuntimeError(f'joints_map joint {name!r} is not revolute in the URDF')
         friction = ' '.join(num(float(v)) for v in self.sim['geom_friction'])
+
+        # Bodies first: they register the mesh assets that the <asset> block lists.
+        body_lines: List[str] = []
+        self.lines = body_lines
+        self.emit(f'    <!-- Spawn above standing contact: nominal {num(self.nominal_height)} + '
+                  f'foot bottom {num(self.foot_bottom_offset())} + clearance '
+                  f'{num(float(self.sim["spawn_clearance"]))}. -->')
+        self.emit_body(self.urdf.root, 2)
+
+        self.lines = []
         self.emit(f'<mujoco model="{self.urdf.name or self.files.robot}">')
         self.emit('  <!--')
         self.emit(f'    Generated by tools/generate_mjcf.py {self.files.robot}; do not edit.')
         self.emit(f'    Source: {self.files.urdf.name} + config/{self.files.robot}_*.yaml.')
         self.emit('    Collision = URDF primitives, robot self-collision off (contype 1 / conaffinity 0),')
         self.emit('    floor conaffinity 1. Requires MuJoCo >= 3.1 (position kv).')
+        if self.mesh_assets:
+            self.emit(f'    Visual = URDF meshes converted to assets/{self.files.robot}/*.obj '
+                      f'(group {VISUAL_GROUP}, no contacts);')
+            self.emit(f'    collision primitives are in group {COLLISION_GROUP} (hidden by default, '
+                      f'press {COLLISION_GROUP} in the viewer).')
         self.emit('  -->')
-        self.emit('  <compiler angle="radian" autolimits="true" inertiafromgeom="false"/>')
+        compiler = '  <compiler angle="radian" autolimits="true" inertiafromgeom="false"'
+        if self.mesh_assets:
+            compiler += f' meshdir="assets/{self.files.robot}"'
+        self.emit(compiler + '/>')
         self.emit(f'  <option timestep="{num(float(self.sim["timestep"]))}" gravity="0 0 -9.81" '
                   'integrator="implicitfast"/>')
         self.emit('')
@@ -241,17 +330,26 @@ class Generator:
                   f'frictionloss="{num(float(self.sim["joint_frictionloss"]))}"/>')
         self.emit(f'    <geom friction="{friction}" condim="3" contype="1" conaffinity="0"/>')
         self.emit('    <position ctrllimited="true" forcelimited="true"/>')
+        self.emit('    <default class="collision">')
+        self.emit(f'      <geom group="{COLLISION_GROUP}"/>')
+        self.emit('    </default>')
+        self.emit('    <default class="visual">')
+        self.emit(f'      <geom type="mesh" group="{VISUAL_GROUP}" contype="0" conaffinity="0" mass="0"/>')
+        self.emit('    </default>')
         self.emit('  </default>')
         self.emit('')
+        if self.mesh_assets:
+            self.emit('  <asset>')
+            for line in self.mesh_assets.values():
+                self.emit(line)
+            self.emit('  </asset>')
+            self.emit('')
         self.emit('  <worldbody>')
         self.emit('    <geom name="floor" type="plane" size="10 10 0.1" contype="1" conaffinity="1" '
                   'rgba="0.8 0.8 0.8 1"/>')
         self.emit('    <light pos="0 0 2" dir="0 0 -1"/>')
         self.emit('')
-        self.emit(f'    <!-- Spawn above standing contact: nominal {num(self.nominal_height)} + '
-                  f'foot bottom {num(self.foot_bottom_offset())} + clearance '
-                  f'{num(float(self.sim["spawn_clearance"]))}. -->')
-        self.emit_body(self.urdf.root, 2)
+        self.lines.extend(body_lines)
         self.emit('  </worldbody>')
         self.emit('')
         self.emit_actuators()
@@ -265,14 +363,19 @@ def main() -> int:
     parser.add_argument('--package-dir', type=Path, default=SOURCE_PACKAGE_DIR)
     parser.add_argument('--output', type=Path, default=None,
                         help='default mujoco/<robot>.xml inside the package')
+    parser.add_argument('--no-visual-meshes', action='store_true',
+                        help='emit collision primitives only (no mesh assets)')
     args = parser.parse_args()
 
     files = resolve_robot_files(args.package_dir, args.robot)
-    generator = Generator(files)
+    generator = Generator(files, visual_meshes=not args.no_visual_meshes)
     xml = generator.generate()
     output = args.output or (args.package_dir / 'mujoco' / f'{args.robot}.xml')
     output.write_text(xml, encoding='utf-8')
     print(f'wrote {output} ({len(generator.lines)} lines)')
+    if generator.mesh_assets:
+        print(f'visual meshes: {len(generator.mesh_assets)} assets in '
+              f'{generator.assets.directory.relative_to(args.package_dir)}')
     if generator.skipped:
         print('skipped mesh collisions on: ' + ', '.join(generator.skipped))
 

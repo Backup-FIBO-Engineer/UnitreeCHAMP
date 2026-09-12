@@ -26,7 +26,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
@@ -273,6 +273,20 @@ class UrdfCollision:
 
 
 @dataclass
+class UrdfVisual:
+    geometry: str  # box | cylinder | sphere | mesh
+    attrib: Dict[str, str]  # mesh: filename [, scale]
+    xyz_text: str
+    rpy_text: str
+    materials: Dict[str, str]  # material name -> "r g b a" (every <material> of the visual)
+
+    @property
+    def rgba(self) -> Optional[str]:
+        """Colour of the first material with a <color>, if any."""
+        return next(iter(self.materials.values()), None)
+
+
+@dataclass
 class UrdfLink:
     name: str
     mass: Optional[float]
@@ -281,6 +295,7 @@ class UrdfLink:
     inertial_rpy_text: str
     inertia: Dict[str, str]
     collisions: List[UrdfCollision]
+    visuals: List[UrdfVisual] = field(default_factory=list)
 
 
 @dataclass
@@ -312,6 +327,12 @@ def parse_urdf_text(text: str) -> Urdf:
     import xml.etree.ElementTree as ET
 
     root = ET.fromstring(text)
+    # Top-level <material name><color rgba/> definitions referenced by name from visuals.
+    global_materials: Dict[str, str] = {}
+    for material in root.findall('material'):
+        colour = material.find('color')
+        if colour is not None and 'rgba' in colour.attrib and 'name' in material.attrib:
+            global_materials[material.attrib['name']] = colour.attrib['rgba']
     links: Dict[str, UrdfLink] = {}
     for link in root.findall('link'):
         inertial = link.find('inertial')
@@ -349,6 +370,29 @@ def parse_urdf_text(text: str) -> Urdf:
                 xyz_text=xyz_text,
                 rpy_text=rpy_text,
             ))
+        visuals: List[UrdfVisual] = []
+        for visual in link.findall('visual'):
+            geometry = visual.find('geometry')
+            if geometry is None or len(geometry) == 0:
+                continue
+            shape = geometry[0]
+            origin = visual.find('origin')
+            materials: Dict[str, str] = {}
+            # The Unitree URDFs list one <material> per COLLADA effect (non-standard
+            # but harmless); keep them all so mesh parts can be coloured by name.
+            for material in visual.findall('material'):
+                colour = material.find('color')
+                if colour is not None and 'rgba' in colour.attrib:
+                    materials[material.attrib.get('name', '')] = colour.attrib['rgba']
+                elif material.attrib.get('name') in global_materials:
+                    materials[material.attrib['name']] = global_materials[material.attrib['name']]
+            visuals.append(UrdfVisual(
+                geometry=shape.tag,
+                attrib=dict(shape.attrib),
+                xyz_text=origin.attrib.get('xyz', '0 0 0') if origin is not None else '0 0 0',
+                rpy_text=origin.attrib.get('rpy', '0 0 0') if origin is not None else '0 0 0',
+                materials=materials,
+            ))
         links[link.attrib['name']] = UrdfLink(
             name=link.attrib['name'],
             mass=mass,
@@ -357,6 +401,7 @@ def parse_urdf_text(text: str) -> Urdf:
             inertial_rpy_text=inertial_rpy,
             inertia=inertia,
             collisions=collisions,
+            visuals=visuals,
         )
 
     joints: Dict[str, UrdfJoint] = {}

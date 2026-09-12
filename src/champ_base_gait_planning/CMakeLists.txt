@@ -141,6 +141,8 @@ install(DIRECTORY
 
 # Robot file resolution shared by the launch files and the offline tools.
 ament_python_install_module(tools/champ_robot_files.py)
+# URDF visual mesh (dae/stl) -> MuJoCo OBJ conversion used by generate_mjcf.py.
+ament_python_install_module(tools/champ_mesh_assets.py)
 
 # ---------------------------------------------------------------------------
 # Tests: one set per robot found in urdf/ (<robot>.urdf or <robot>.xacro).

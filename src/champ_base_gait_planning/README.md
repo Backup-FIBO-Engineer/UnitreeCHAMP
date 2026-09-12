@@ -17,6 +17,7 @@ described only by files named after it inside this package:
 | `config/<robot>_sim.yaml` | MuJoCo | `sim.*` simulator tuning (actuator gains, joint damping, friction, spawn clearance, velocity limit; foot geom/site names for hand-written models) |
 | `config/<robot>_lowcmd.yaml` | Sim2Real | `unitree_dds_bridge` parameters: `kp`, `kd`, `motor_mode`, `contact_force_threshold`, `ramp_sec`, topics |
 | `mujoco/<robot>.xml` | MuJoCo | MJCF model (generated from the URDF or hand-written) |
+| `mujoco/assets/<robot>/*.obj` | MuJoCo | URDF visual meshes converted to OBJ (one per material, generated) |
 | `rviz/<robot>_gait.rviz` | optional | RViz layout for the RViz launch |
 
 Every launch file takes `robot:=<name>`; the name is the stem of the file in
@@ -48,6 +49,13 @@ three CHAMP yamls. `champ::URDF::getPose` sums the joint `origin xyz` along the
 3. **MuJoCo**: `mujoco/mujoco_sim.py` loads `mujoco/<robot>.xml`, reads the
    joint order from `joints_map`, the base and IMU bodies from `links_map`, the
    joint velocity limits from the URDF and the tuning from `sim.*`.
+   `tools/generate_mjcf.py` builds that model from the URDF: collision
+   primitives (group 3, hidden by default) for the physics and the URDF
+   `<visual>` meshes for the display, so the viewer shows the same robot as
+   RViz. MuJoCo cannot read COLLADA, so `tools/champ_mesh_assets.py` converts
+   each `.dae`/`.stl` into `mujoco/assets/<robot>/<mesh>_<n>.obj` (one file per
+   material, coloured from the URDF/COLLADA materials); press `3` in the viewer
+   to overlay the collision primitives.
 
 4. **Sim2Real**: `unitree_dds_bridge` maps CHAMP joints (LF, RF, LH, RH) to the
    Unitree motor order (FR, FL, RR, RL × hip/thigh/calf) with `joints_map`,
@@ -147,6 +155,7 @@ No code changes. For a robot `<name>`:
 5. `config/<name>_lowcmd.yaml` — `kp`, `kd`, `motor_mode` and
    `contact_force_threshold` from the unitree_sdk2 `<name>_stand_example`.
 6. `config/<name>_sim.yaml` + `python3 tools/generate_mjcf.py <name>` → `mujoco/<name>.xml`
+   plus `mujoco/assets/<name>/*.obj` converted from the URDF visual meshes
    (URDF feet must be sphere collisions; otherwise hand-write the MJCF and list
    `sim.foot_geom_names` / `sim.foot_site_names` as `xgo_sim.yaml` does).
 7. Optional `rviz/<name>_gait.rviz`.
