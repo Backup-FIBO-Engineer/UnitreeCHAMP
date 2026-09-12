@@ -1,5 +1,5 @@
-// Offline checks of the rt/lowcmd mapping for any Unitree robot described by
-// its URDF and CHAMP joints yaml. No ROS: urdfdom (urdf_parser) + yaml-cpp.
+// Offline checks of the LowCmd (/lowcmd) mapping for any Unitree robot described
+// by its URDF and CHAMP joints yaml. No ROS: urdfdom (urdf_parser) + yaml-cpp.
 //
 //   verify_unitree_lowcmd <urdf> <joints.yaml>
 //
@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <cstdarg>
+#include <cstddef>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -95,7 +96,7 @@ int main(int argc, char ** argv)
   }
   const UnitreeMotorMap map = unitreeMotorMapFromLegs(legs);
   const UnitreeJointLimits limits = unitreeJointLimitsFromUrdf(*model, map);
-  std::printf("Robot '%s': rt/lowcmd motor -> joint\n", model->getName().c_str());
+  std::printf("Robot '%s': LowCmd motor -> joint\n", model->getName().c_str());
   for (int i = 0; i < kUnitreeMotorCount; ++i) {
     std::printf(
       "  motor %2d = %-20s [%8.4f, %8.4f]\n", i, map.joint_names[static_cast<size_t>(i)].c_str(),
@@ -222,6 +223,32 @@ int main(int argc, char ** argv)
   word = 1;
   check(crc32_core(&word, 1) != crc_zero, "CRC changes when the payload changes");
   check(LOWLEVEL == 0xff, "LowCmd level_flag is 0xFF");
+
+  // Wire struct the ROS 2 LowCmd is repacked into before the CRC (unitree_ros2
+  // motor_crc.h): 812 bytes, CRC over the 202 words in front of the crc field.
+  check(sizeof(UnitreeLowCmdWire) == 812, "LowCmd wire struct is 812 bytes");
+  check(kUnitreeLowCmdCrcWords == 202, "CRC covers 202 words (everything but crc)");
+  check(offsetof(UnitreeLowCmdWire, crc) == 808, "crc is the last word of the wire struct");
+  check(offsetof(UnitreeLowCmdWire, motor_cmd) == 24, "motor_cmd[0] starts at byte 24");
+  check(offsetof(UnitreeLowCmdWire, bms_cmd) == 744, "20 motor slots of 36 bytes precede bms_cmd");
+  {
+    UnitreeLowCmdWire wire{};
+    wire.head[0] = 0xFE;
+    wire.head[1] = 0xEF;
+    wire.level_flag = LOWLEVEL;
+    for (int i = 0; i < kUnitreeLowCmdMotorSlots; ++i) {
+      wire.motor_cmd[i].q = static_cast<float>(PosStopF);
+      wire.motor_cmd[i].dq = static_cast<float>(VelStopF);
+    }
+    const uint32_t crc_a = unitreeLowCmdWireCrc(wire);
+    wire.crc = crc_a;
+    check(unitreeLowCmdWireCrc(wire) == crc_a, "crc field itself is not part of the CRC");
+    wire.motor_cmd[kUnitreeMotorCount - 1].q = 0.5f;
+    check(unitreeLowCmdWireCrc(wire) != crc_a, "CRC covers the last motor slot used");
+    wire.motor_cmd[kUnitreeMotorCount - 1].q = static_cast<float>(PosStopF);
+    wire.reserve = 1;
+    check(unitreeLowCmdWireCrc(wire) != crc_a, "CRC covers the reserve word before crc");
+  }
 
   std::printf("\nResult: %d failed / %d checks\n", g_fails, g_checks);
   return g_fails ? 1 : 0;

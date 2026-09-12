@@ -4,7 +4,7 @@
 /**:
   ros__parameters:
     sim:
-      # Position-actuator gains. unitree_sdk2 b2_stand_example drives the real
+      # Position-actuator gains. unitree_ros2 b2_stand_example drives the real
       # B2 with Kp 1000 / Kd 10; hip abduction gets half of that.
       actuator_kp_hip: 500.0
       actuator_kp_leg: 1000.0

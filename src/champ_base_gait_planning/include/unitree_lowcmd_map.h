@@ -9,12 +9,13 @@
 
 #include <urdf_model/model.h>
 
-// Unitree quadrupeds publish/consume the unitree_go LowCmd_/LowState_ IDL on
-// rt/lowcmd / rt/lowstate. motor_cmd[0..11], motor_state[0..11] and
-// foot_force[0..3] are laid out by leg FR, FL, RR, RL and, inside a leg, hip,
-// thigh, calf (unitree_sdk2 go2/b2 examples). That layout is protocol, not
-// robot geometry: the joint names behind each slot come from the CHAMP
-// joints_map yaml and the joint limits from the URDF of the selected robot.
+// Unitree quadrupeds publish/consume the unitree_go LowCmd/LowState messages
+// on /lowcmd and /lowstate (unitree_ros2; DDS rt/lowcmd, rt/lowstate).
+// motor_cmd[0..11], motor_state[0..11] and foot_force[0..3] are laid out by
+// leg FR, FL, RR, RL and, inside a leg, hip, thigh, calf (unitree_ros2 go2/b2
+// stand examples). That layout is protocol, not robot geometry: the joint
+// names behind each slot come from the CHAMP joints_map yaml and the joint
+// limits from the URDF of the selected robot.
 inline constexpr int kUnitreeLegCount = 4;
 inline constexpr int kUnitreeJointsPerLeg = 3;
 inline constexpr int kUnitreeMotorCount = kUnitreeLegCount * kUnitreeJointsPerLeg;
@@ -95,7 +96,7 @@ inline UnitreeJointLimits unitreeJointLimitsFromUrdf(
     }
     if (!joint->limits || !(joint->limits->lower < joint->limits->upper)) {
       throw std::runtime_error(
-              "URDF joint '" + name + "' needs <limit lower upper> for rt/lowcmd clamping");
+              "URDF joint '" + name + "' needs <limit lower upper> for LowCmd clamping");
     }
     limits.lower[static_cast<size_t>(i)] = static_cast<float>(joint->limits->lower);
     limits.upper[static_cast<size_t>(i)] = static_cast<float>(joint->limits->upper);

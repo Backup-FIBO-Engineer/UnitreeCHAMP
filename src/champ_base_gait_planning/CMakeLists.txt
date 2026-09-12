@@ -54,61 +54,32 @@ target_link_libraries(state_estimation_node state_estimation)
 ament_target_dependencies(state_estimation_node ${dependencies})
 
 # ---------------------------------------------------------------------------
-# unitree_dds_bridge (any Unitree quadruped speaking rt/lowcmd / rt/lowstate)
+# unitree_ros2_bridge: any Unitree quadruped speaking unitree_go LowCmd/LowState
+# on /lowcmd + /lowstate through unitree_ros2 (same ROS 2 / CycloneDDS graph as
+# CHAMP). Needs the unitree_go and unitree_api message packages from
+# https://github.com/unitreerobotics/unitree_ros2 (cyclonedds_ws/src/unitree),
+# either built in this workspace or sourced from unitree_ros2/cyclonedds_ws.
 # ---------------------------------------------------------------------------
 find_package(Threads REQUIRED)
-find_package(unitree_sdk2 QUIET)
-if(NOT unitree_sdk2_FOUND)
-  find_path(UNITREE_SDK2_INCLUDE_DIR
-    NAMES unitree/robot/channel/channel_publisher.hpp
-    PATHS /usr/local/include /opt/unitree_robotics/include
-          $ENV{HOME}/unitree_sdk2/include)
-  find_library(UNITREE_SDK2_LIB
-    NAMES unitree_sdk2
-    PATHS /usr/local/lib /opt/unitree_robotics/lib
-          $ENV{HOME}/unitree_sdk2/lib)
-  if(UNITREE_SDK2_INCLUDE_DIR AND UNITREE_SDK2_LIB)
-    set(unitree_sdk2_FOUND TRUE)
-  endif()
-endif()
+find_package(unitree_go QUIET)
+find_package(unitree_api QUIET)
 
-set(UNITREE_DDS_BRIDGE_BUILT FALSE)
-if(unitree_sdk2_FOUND)
-  add_executable(unitree_dds_bridge
-    src/unitree_dds_bridge.cpp
+set(UNITREE_ROS2_BRIDGE_BUILT FALSE)
+if(unitree_go_FOUND AND unitree_api_FOUND)
+  add_executable(unitree_ros2_bridge
+    src/unitree_ros2_bridge.cpp
     src/motor_crc.cpp
   )
-  ament_target_dependencies(unitree_dds_bridge rclcpp sensor_msgs champ_msgs urdf)
-  if(TARGET unitree_sdk2)
-    target_link_libraries(unitree_dds_bridge unitree_sdk2 Threads::Threads)
-    if(TARGET ddsc)
-      get_target_property(_unitree_ddsc_lib ddsc IMPORTED_LOCATION)
-      get_filename_component(UNITREE_SDK2_LIB_DIR "${_unitree_ddsc_lib}" DIRECTORY)
-    endif()
-  else()
-    target_include_directories(unitree_dds_bridge PRIVATE ${UNITREE_SDK2_INCLUDE_DIR})
-    target_link_libraries(unitree_dds_bridge ${UNITREE_SDK2_LIB} Threads::Threads)
-    get_filename_component(UNITREE_SDK2_LIB_DIR "${UNITREE_SDK2_LIB}" DIRECTORY)
-  endif()
-  if(UNITREE_SDK2_LIB_DIR)
-    # unitree_sdk2 ships its own CycloneDDS (libddsc.so.0 / libddscxx.so.0) whose soname
-    # collides with the libddsc.so.0 of ROS 2 rmw_cyclonedds. If the ROS copy wins via
-    # LD_LIBRARY_PATH the SDK's libddscxx aborts with "free(): invalid pointer" as soon as
-    # another rt/lowstate participant is discovered. Pin the SDK copy with a DT_RPATH, which
-    # the dynamic loader consults before LD_LIBRARY_PATH.
-    set_target_properties(unitree_dds_bridge PROPERTIES
-      BUILD_RPATH "${UNITREE_SDK2_LIB_DIR}"
-      INSTALL_RPATH "${UNITREE_SDK2_LIB_DIR}"
-      INSTALL_RPATH_USE_LINK_PATH FALSE
-      SKIP_BUILD_RPATH FALSE)
-    target_link_options(unitree_dds_bridge PRIVATE "LINKER:--disable-new-dtags")
-  endif()
-  set(UNITREE_DDS_BRIDGE_BUILT TRUE)
-  message(STATUS "unitree_sdk2 found: building unitree_dds_bridge (rt/lowcmd Sim2Real)")
+  ament_target_dependencies(unitree_ros2_bridge
+    rclcpp sensor_msgs champ_msgs urdf unitree_go unitree_api)
+  target_link_libraries(unitree_ros2_bridge Threads::Threads)
+  set(UNITREE_ROS2_BRIDGE_BUILT TRUE)
+  message(STATUS "unitree_go + unitree_api found: building unitree_ros2_bridge (LowCmd Sim2Real)")
 else()
   message(WARNING
-    "unitree_sdk2 not found; skip unitree_dds_bridge. Install unitree_sdk2 to run "
-    "Unitree hardware (ros2 launch champ_base_gait_planning unitree_sim2real.launch.py robot:=<robot>).")
+    "unitree_go/unitree_api (unitree_ros2) not found; skip unitree_ros2_bridge. Build or source "
+    "unitree_ros2/cyclonedds_ws to run Unitree hardware "
+    "(ros2 launch champ_base_gait_planning unitree_sim2real.launch.py robot:=<robot>).")
 endif()
 
 install(TARGETS
@@ -122,8 +93,8 @@ set(EXEC_TARGETS
   quadruped_controller_node
   state_estimation_node
 )
-if(UNITREE_DDS_BRIDGE_BUILT)
-  list(APPEND EXEC_TARGETS unitree_dds_bridge)
+if(UNITREE_ROS2_BRIDGE_BUILT)
+  list(APPEND EXEC_TARGETS unitree_ros2_bridge)
 endif()
 install(TARGETS ${EXEC_TARGETS}
   DESTINATION lib/${PROJECT_NAME}

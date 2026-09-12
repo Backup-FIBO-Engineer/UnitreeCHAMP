@@ -1,4 +1,4 @@
-"""CHAMP -> unitree_dds_bridge -> rt/lowcmd on a real Unitree quadruped.
+"""CHAMP -> unitree_ros2_bridge -> /lowcmd (unitree_ros2) on a real Unitree quadruped.
 
     ros2 launch champ_base_gait_planning unitree_sim2real.launch.py robot:=<robot> \
         network_interface:=eth0
@@ -6,19 +6,31 @@
 Robot selection is file based: urdf/<robot>.*, config/<robot>_{gait,joints,links}.yaml
 for CHAMP and config/<robot>_lowcmd.yaml for the bridge gains/motor mode. The joint
 names, joint limits and base/IMU frames the bridge uses all come from those files.
+
+The robot is a participant of the same ROS 2 graph (unitree_ros2: CycloneDDS on
+domain 0 over the cabled NIC). network_interface:=<nic> sets RMW_IMPLEMENTATION and
+CYCLONEDDS_URI for every node of this launch, exactly like unitree_ros2/setup.sh;
+leave it empty when that setup.sh is already sourced. ROS_DOMAIN_ID is never set
+here: the robot lives on domain 0, so it must be 0 (or unset) in the shell.
 Sport/motion-control services must be off on the robot (the bridge calls ReleaseMode).
 """
-
-import os
 
 from ament_index_python.packages import get_package_share_directory
 from champ_robot_files import available_robots, resolve_robot_files
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction, SetEnvironmentVariable
-from launch.conditions import IfCondition
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+
+
+def cyclonedds_uri(network_interface):
+    """Inline CycloneDDS config pinning the NIC, as in unitree_ros2/setup.sh."""
+    return (
+        '<CycloneDDS><Domain><General><Interfaces>'
+        f'<NetworkInterface name="{network_interface}" priority="default" multicast="default"/>'
+        '</Interfaces></General></Domain></CycloneDDS>'
+    )
 
 
 def launch_setup(context):
@@ -26,8 +38,8 @@ def launch_setup(context):
     files = resolve_robot_files(pkg_share, LaunchConfiguration('robot').perform(context))
     if files.lowcmd_yaml is None:
         raise FileNotFoundError(
-            f"robot '{files.robot}' has no config/{files.robot}_lowcmd.yaml (unitree_dds_bridge "
-            'gains, motor_mode, contact threshold); it cannot be driven over rt/lowcmd')
+            f"robot '{files.robot}' has no config/{files.robot}_lowcmd.yaml (unitree_ros2_bridge "
+            'gains, motor_mode, contact threshold); it cannot be driven over /lowcmd')
     robot_description = ParameterValue(
         Command([files.urdf_command, ' ', str(files.urdf)]), value_type=str)
 
@@ -38,9 +50,23 @@ def launch_setup(context):
         str(files.links_yaml),
     ]
 
-    return [
+    actions = []
+    network_interface = LaunchConfiguration('network_interface').perform(context).strip()
+    if network_interface:
+        actions += [
+            SetEnvironmentVariable(name='RMW_IMPLEMENTATION', value='rmw_cyclonedds_cpp'),
+            SetEnvironmentVariable(name='CYCLONEDDS_URI', value=cyclonedds_uri(network_interface)),
+            LogInfo(msg=[f'CycloneDDS bound to {network_interface} for every node of this launch']),
+        ]
+    else:
+        actions.append(LogInfo(msg=[
+            'network_interface is empty: using RMW_IMPLEMENTATION / CYCLONEDDS_URI from the shell '
+            '(source unitree_ros2/setup.sh)',
+        ]))
+
+    return actions + [
         LogInfo(msg=[
-            f'{files.robot} Sim2Real: rt/lowcmd + rt/lowstate via unitree_sdk2. Sport must stay off.',
+            f'{files.robot} Sim2Real: /lowcmd + /lowstate via unitree_ros2. Sport must stay off.',
         ]),
         Node(
             package='champ_base_gait_planning',
@@ -61,15 +87,12 @@ def launch_setup(context):
         ),
         Node(
             package='champ_base_gait_planning',
-            executable='unitree_dds_bridge',
-            name='unitree_dds_bridge',
+            executable='unitree_ros2_bridge',
+            name='unitree_ros2_bridge',
             output='screen',
             parameters=common_params + [
                 str(files.lowcmd_yaml),
-                {
-                    'command_topic': LaunchConfiguration('command_topic'),
-                    'network_interface': LaunchConfiguration('network_interface'),
-                },
+                {'command_topic': LaunchConfiguration('command_topic')},
             ],
         ),
         Node(
@@ -91,7 +114,6 @@ def launch_setup(context):
 
 def generate_launch_description():
     pkg_share = get_package_share_directory('champ_base_gait_planning')
-    cyclone_xml = os.path.join(pkg_share, 'config', 'cyclonedds_ros_loopback.xml')
     return LaunchDescription([
         DeclareLaunchArgument(
             'robot',
@@ -100,22 +122,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'network_interface',
             default_value='',
-            description='NIC cabled to the robot (e.g. eth0). Empty uses the unitree_sdk2 default.',
+            description='NIC cabled to the robot (e.g. eth0): sets RMW_IMPLEMENTATION=rmw_cyclonedds_cpp '
+                        'and CYCLONEDDS_URI for this launch. Empty keeps the shell environment '
+                        '(unitree_ros2/setup.sh).',
         ),
         DeclareLaunchArgument(
             'command_topic',
             default_value='joint_commands',
-            description='CHAMP planned joints consumed by the DDS bridge',
-        ),
-        DeclareLaunchArgument(
-            'ros_loopback_dds',
-            default_value='true',
-            description='Bind ROS 2 CycloneDDS to lo so it does not fight unitree_sdk2 on eth',
-        ),
-        SetEnvironmentVariable(
-            name='CYCLONEDDS_URI',
-            value='file://' + cyclone_xml,
-            condition=IfCondition(LaunchConfiguration('ros_loopback_dds')),
+            description='CHAMP planned joints consumed by unitree_ros2_bridge',
         ),
         OpaqueFunction(function=launch_setup),
     ])

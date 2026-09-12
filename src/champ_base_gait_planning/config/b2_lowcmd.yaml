@@ -1,15 +1,18 @@
-# unitree_dds_bridge parameters for B2. Joint names, joint limits and the
+# unitree_ros2_bridge parameters for B2. Joint names, joint limits and the
 # base/IMU frames come from urdf/b2.urdf + b2_joints.yaml + b2_links.yaml,
 # which the launch passes alongside this file.
 /**:
   ros__parameters:
+    # unitree_ros2 topics of the robot (ROS 2 /lowcmd == DDS rt/lowcmd).
+    lowcmd_topic: /lowcmd
+    lowstate_topic: /lowstate
+    # CHAMP side topics.
     command_topic: joint_commands
     joint_state_topic: joint_states
     contact_topic: foot_contacts
     imu_topic: imu/data
-    network_interface: ""
     publish_rate: 500.0
-    # unitree_sdk2 example/b2/b2_stand_example.cpp: Kp 1000, Kd 10, mode 0x0A.
+    # unitree_ros2 example/src/src/b2/b2_stand_example.cpp: Kp 1000, Kd 10, mode 0x0A.
     # B2 weighs ~70 kg (URDF); Go2-level gains (60/5) cannot hold it up.
     kp: 1000.0
     kd: 10.0
@@ -17,6 +20,7 @@
     motor_mode: 10  # 0x0A PMSM servo
     command_timeout_sec: 0.5
     ramp_sec: 3.0
-    # rt/lowstate foot_force is a raw sensor value; B2 feet read higher than Go2.
+    # /lowstate foot_force is a raw sensor value; B2 feet read higher than Go2.
     contact_force_threshold: 40.0
+    # motion_switcher ReleaseMode over /api/motion_switcher/{request,response}.
     release_sport: true

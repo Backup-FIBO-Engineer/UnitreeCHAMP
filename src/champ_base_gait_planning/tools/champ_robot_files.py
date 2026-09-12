@@ -8,7 +8,7 @@ A robot is described only by files named after it inside this package:
     config/<robot>_joints.yaml               CHAMP joints_map
     config/<robot>_links.yaml                CHAMP links_map (+ base, imu)
     config/<robot>_sim.yaml                  optional MuJoCo tuning (sim.*)
-    config/<robot>_lowcmd.yaml               optional unitree_dds_bridge gains
+    config/<robot>_lowcmd.yaml               optional unitree_ros2_bridge gains
     mujoco/<robot>.xml                       optional MuJoCo model
     rviz/<robot>_gait.rviz                   optional RViz layout
 

@@ -1,4 +1,4 @@
-"""Short alias of unitree_sim2real.launch.py.
+"""Short alias of unitree_sim2real.launch.py (CHAMP + unitree_ros2_bridge on /lowcmd).
 
     ros2 launch champ_base_gait_planning unitree_lowcmd.launch.py robot:=<robot> network_interface:=eth0
 """
