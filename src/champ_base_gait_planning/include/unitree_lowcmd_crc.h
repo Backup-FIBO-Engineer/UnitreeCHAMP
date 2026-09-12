@@ -2,11 +2,30 @@
 #define CHAMP_UNITREE_LOWCMD_CRC_H
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <tuple>
 
+#include <unitree_go/msg/bms_cmd.hpp>
 #include <unitree_go/msg/low_cmd.hpp>
+#include <unitree_go/msg/motor_cmd.hpp>
 
 #include "motor_crc.h"
+
+// ROS 2 array extents must match the wire struct: std::copy below is not
+// bounds-checked, and a longer ROS field would overflow the CRC buffer.
+static_assert(std::tuple_size<decltype(unitree_go::msg::LowCmd::head)>::value == 2);
+static_assert(std::tuple_size<decltype(unitree_go::msg::LowCmd::sn)>::value == 2);
+static_assert(std::tuple_size<decltype(unitree_go::msg::LowCmd::version)>::value == 2);
+static_assert(
+  std::tuple_size<decltype(unitree_go::msg::LowCmd::motor_cmd)>::value ==
+  static_cast<std::size_t>(kUnitreeLowCmdMotorSlots));
+static_assert(std::tuple_size<decltype(unitree_go::msg::MotorCmd::reserve)>::value == 3);
+static_assert(std::tuple_size<decltype(unitree_go::msg::BmsCmd::reserve)>::value == 3);
+static_assert(std::tuple_size<decltype(unitree_go::msg::LowCmd::wireless_remote)>::value == 40);
+static_assert(std::tuple_size<decltype(unitree_go::msg::LowCmd::led)>::value == 12);
+static_assert(std::tuple_size<decltype(unitree_go::msg::LowCmd::fan)>::value == 2);
 
 // CRC of a unitree_go/msg/LowCmd, computed the way the robot checks it
 // (unitree_ros2 example/src/src/common/motor_crc.cpp get_crc()): the ROS 2

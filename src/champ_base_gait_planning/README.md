@@ -126,8 +126,9 @@ exports); leave it empty when `setup.sh` is already sourced. The launch never
 sets `ROS_DOMAIN_ID`: the robot is on domain 0, so keep it 0 / unset. The
 bridge first asks the motion_switcher to `ReleaseMode` and, like the
 unitree_ros2 stand examples, publishes no LowCmd while the robot reports a
-motion service still active (it retries every second; if the service never
-answers it gives up after 6 attempts and continues). Then it holds the
+motion service still active (it retries every second). It gives up and
+continues only after 6 CheckMode **timeouts** (robot not on the graph); a
+non-timeout error is still an answer, so LowCmd stays off. Then it holds the
 measured pose and ramps to the CHAMP targets over `ramp_sec` at
 `publish_rate`. If CHAMP commands stop for `command_timeout_sec`, the last
 pose is held with extra damping. Never mix this with the Sport API.

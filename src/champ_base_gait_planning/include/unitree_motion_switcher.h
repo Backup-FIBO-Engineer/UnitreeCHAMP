@@ -132,17 +132,24 @@ public:
   }
 
   // name is the active motion service ("normal", "ai", ...), empty when none.
+  // Returns kUnknownError (instead of kSuccess with an empty name) when the
+  // reply JSON has no "name" field: the unitree_ros2 client does
+  // js["name"].get_to(name) and throws on a missing key, so a missing key
+  // must not be treated as "released".
   int32_t checkMode(std::string & form, std::string & name)
   {
     std::string data;
     const int32_t ret = call(kApiCheckMode, data);
-    if (ret == kSuccess) {
-      form.clear();
-      name.clear();
-      unitreeJsonStringField(data, "form", form);
-      unitreeJsonStringField(data, "name", name);
+    form.clear();
+    name.clear();
+    if (ret != kSuccess) {
+      return ret;
     }
-    return ret;
+    unitreeJsonStringField(data, "form", form);
+    if (!unitreeJsonStringField(data, "name", name)) {
+      return kUnknownError;
+    }
+    return kSuccess;
   }
 
   int32_t releaseMode()
@@ -158,8 +165,12 @@ private:
     Request request;
     request.header.identity.api_id = api_id;
     // Any id unique per request; the reply echoes it (uptime ns as in unitree_ros2).
-    request.header.identity.id =
-      std::chrono::steady_clock::now().time_since_epoch().count();
+    // 0 is reserved for "not waiting", so never publish a zero id.
+    int64_t id = std::chrono::steady_clock::now().time_since_epoch().count();
+    if (id == 0) {
+      id = 1;
+    }
+    request.header.identity.id = id;
     {
       std::lock_guard<std::mutex> lock(response_mutex_);
       expected_id_ = request.header.identity.id;

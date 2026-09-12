@@ -255,9 +255,10 @@ private:
       }
       // Same policy as the unitree_ros2 stand examples: while the robot answers
       // that a motion service is still active, keep releasing and never start
-      // LowCmd underneath it. Only when the service does not answer at all
-      // (robot not reachable) give up after a few attempts and carry on.
-      int unanswered = 0;
+      // LowCmd underneath it. Give up (and continue) only when CheckMode times
+      // out repeatedly — the robot is not on the graph. A non-timeout error is
+      // still an answer, so it is not treated as "unreachable".
+      int timeouts = 0;
       for (int attempt = 1; rclcpp::ok(); ++attempt) {
         std::string form;
         std::string name;
@@ -267,35 +268,44 @@ private:
           return;
         }
         const int32_t ret = msc.releaseMode();
-        if (check == UnitreeMotionSwitcher::kSuccess) {
-          unanswered = 0;
-          RCLCPP_WARN(
-            get_logger(),
-            "Attempt %d: motion service '%s' (form %s) still active on the %s, ReleaseMode "
-            "returned %d; retrying, no LowCmd until it is off.",
-            attempt, name.c_str(), form.c_str(), robot_name_.c_str(), ret);
-        } else {
-          ++unanswered;
+        if (check == UnitreeMotionSwitcher::kTimeout) {
+          ++timeouts;
           RCLCPP_INFO(
             get_logger(),
             "Attempt %d: motion_switcher did not answer (CheckMode %d, ReleaseMode %d).",
             attempt, check, ret);
-          if (unanswered >= 6) {
+          if (timeouts >= 6) {
             RCLCPP_WARN(
               get_logger(),
-              "motion_switcher unreachable after %d attempts. Continuing; make sure Sport is "
-              "off on the %s before it joins the network.",
-              unanswered, robot_name_.c_str());
+              "motion_switcher unreachable after %d timed-out attempts. Continuing; make sure "
+              "Sport is off on the %s before it joins the network.",
+              timeouts, robot_name_.c_str());
             return;
+          }
+        } else {
+          timeouts = 0;
+          if (check == UnitreeMotionSwitcher::kSuccess) {
+            RCLCPP_WARN(
+              get_logger(),
+              "Attempt %d: motion service '%s' (form %s) still active on the %s, ReleaseMode "
+              "returned %d; retrying, no LowCmd until it is off.",
+              attempt, name.c_str(), form.c_str(), robot_name_.c_str(), ret);
+          } else {
+            RCLCPP_WARN(
+              get_logger(),
+              "Attempt %d: motion_switcher answered CheckMode %d (ReleaseMode %d) on the %s; "
+              "retrying, no LowCmd until CheckMode reports an empty service name.",
+              attempt, check, ret, robot_name_.c_str());
           }
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
       }
     } catch (const std::exception & ex) {
-      RCLCPP_WARN(
+      RCLCPP_ERROR(
         get_logger(),
-        "Could not ReleaseMode (%s). Stop Sport manually before sending LowCmd.",
+        "Could not ReleaseMode (%s). Not sending LowCmd.",
         ex.what());
+      throw;
     }
   }
 
