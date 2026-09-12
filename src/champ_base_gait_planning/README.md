@@ -1,7 +1,8 @@
 # champ_base_gait_planning
 
 CHAMP gait planning + IK/FK + odometry for quadrupeds, with a MuJoCo
-simulator and a Unitree `rt/lowcmd` / `rt/lowstate` DDS bridge (Sim2Real).
+simulator and a Unitree `/lowcmd` / `/lowstate` bridge over
+[unitree_ros2](https://github.com/unitreerobotics/unitree_ros2) (Sim2Real).
 
 The code is **robot-agnostic**. Nothing in `src/`, `mujoco/mujoco_sim.py`,
 the launch files or the offline tools contains a joint name, link name, joint
@@ -15,7 +16,7 @@ described only by files named after it inside this package:
 | `config/<robot>_joints.yaml` | yes | CHAMP `joints_map.{left_front,right_front,left_hind,right_hind}` (hip, upper, lower joint names) |
 | `config/<robot>_links.yaml` | yes | CHAMP `links_map.*` leg chains + `links_map.base` + `links_map.imu` |
 | `config/<robot>_sim.yaml` | MuJoCo | `sim.*` simulator tuning (actuator gains, joint damping, friction, spawn clearance, velocity limit; foot geom/site names for hand-written models) |
-| `config/<robot>_lowcmd.yaml` | Sim2Real | `unitree_dds_bridge` parameters: `kp`, `kd`, `motor_mode`, `contact_force_threshold`, `ramp_sec`, topics |
+| `config/<robot>_lowcmd.yaml` | Sim2Real | `unitree_ros2_bridge` parameters: `kp`, `kd`, `motor_mode`, `contact_force_threshold`, `ramp_sec`, topics |
 | `mujoco/<robot>.xml` | MuJoCo | MJCF model (generated from the URDF or hand-written) |
 | `mujoco/assets/<robot>/*.obj` | MuJoCo | URDF visual meshes converted to OBJ (one per material, generated) |
 | `rviz/<robot>_gait.rviz` | optional | RViz layout for the RViz launch |
@@ -59,23 +60,36 @@ three CHAMP yamls. `champ::URDF::getPose` sums the joint `origin xyz` along the
    collision keep a hand-written MJCF (`python3 tools/generate_mjcf.py <robot>
    --patch-visuals` inserts the visual meshes without replacing the collision).
 
-4. **Sim2Real**: `unitree_dds_bridge` maps CHAMP joints (LF, RF, LH, RH) to the
+4. **Sim2Real**: `unitree_ros2_bridge` maps CHAMP joints (LF, RF, LH, RH) to the
    Unitree motor order (FR, FL, RR, RL × hip/thigh/calf) with `joints_map`,
-   clamps every target to the URDF `<limit lower upper>`, writes `rt/lowcmd`
-   with CRC and publishes `rt/lowstate` as `/joint_states`, `/foot_contacts`
-   (`foot_force >= contact_force_threshold`) and `/imu/data`
-   (`frame_id = links_map.imu`).
+   clamps every target to the URDF `<limit lower upper>`, publishes
+   `unitree_go/LowCmd` on `/lowcmd` (CRC computed over the wire layout, as in
+   the unitree_ros2 `get_crc()`) and republishes `unitree_go/LowState` from
+   `/lowstate` as `/joint_states`, `/foot_contacts`
+   (`foot_force > contact_force_threshold`) and `/imu/data`
+   (`frame_id = links_map.imu`). Before the first command it asks the robot's
+   motion_switcher (`unitree_api/Request` on `/api/motion_switcher/request`)
+   to `ReleaseMode`, like the unitree_ros2 `go2_stand_example` /
+   `b2_stand_example`. The robot is just another node of the ROS 2 graph
+   (CycloneDDS, domain 0); nothing from `unitree_sdk2` is used.
 
 ## Build
 
 ```bash
-source /opt/ros/jazzy/setup.bash        # or your ROS 2 distro
+source /opt/ros/humble/setup.bash       # or your ROS 2 distro
 colcon build --packages-select champ champ_msgs champ_base_gait_planning
 source install/setup.bash
 ```
 
-Hardware Sim2Real also needs [unitree_sdk2](https://github.com/unitreerobotics/unitree_sdk2)
-(`-DCMAKE_PREFIX_PATH=/opt/unitree_robotics`) so `unitree_dds_bridge` is built.
+Hardware Sim2Real needs the `unitree_go` and `unitree_api` message packages
+from unitree_ros2 (`cyclonedds_ws/src/unitree`) so `unitree_ros2_bridge` is
+built; without them CMake prints a warning and skips the bridge. Either build
+unitree_ros2's `cyclonedds_ws` and source its `install/setup.bash` before
+`colcon build`, or copy/symlink `unitree_go` and `unitree_api` into this
+workspace's `src/`. Required apt packages:
+`ros-$ROS_DISTRO-rmw-cyclonedds-cpp`, `ros-$ROS_DISTRO-rosidl-generator-dds-idl`.
+`rosdep` does not know the `unitree_go`/`unitree_api` keys; skip them
+(`--skip-keys "unitree_go unitree_api"`) when the packages are not sourced.
 MuJoCo needs the `mujoco` Python package.
 
 ## Run
@@ -104,18 +118,19 @@ Real Unitree robot (Sport / motion services **off**, NIC cabled to the robot):
 ros2 launch champ_base_gait_planning unitree_sim2real.launch.py robot:=go2 network_interface:=eth0
 ```
 
-`unitree_lowcmd.launch.py robot:=<name>` starts only the bridge. The launch
-binds ROS 2 CycloneDDS to `lo` (`ros_loopback_dds:=false` to disable) so it
-does not share the robot NIC with unitree_sdk2. After `MotionSwitcher
-ReleaseMode` the bridge holds the measured pose, then ramps to the CHAMP
-targets over `ramp_sec` at `publish_rate`. If CHAMP commands stop for
-`command_timeout_sec`, the last pose is held with extra damping. Never mix this
-with the Sport API.
+`unitree_lowcmd.launch.py robot:=<name>` is a short alias. With
+`network_interface:=<nic>` the launch exports
+`RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` and a `CYCLONEDDS_URI` pinned to that
+NIC for every node it starts (the same two variables unitree_ros2 `setup.sh`
+exports); leave it empty when `setup.sh` is already sourced. The launch never
+sets `ROS_DOMAIN_ID`: the robot is on domain 0, so keep it 0 / unset. After
+motion_switcher `ReleaseMode` the bridge holds the measured pose, then ramps
+to the CHAMP targets over `ramp_sec` at `publish_rate`. If CHAMP commands stop
+for `command_timeout_sec`, the last pose is held with extra damping. Never mix
+this with the Sport API.
 
-`unitree_sdk2` ships its own CycloneDDS (`libddsc.so.0`) with the same soname
-as the ROS 2 `rmw_cyclonedds` copy; the bridge is linked with a `DT_RPATH` to
-the unitree_sdk2 lib directory. Check with
-`ldd $(ros2 pkg prefix champ_base_gait_planning)/lib/champ_base_gait_planning/unitree_dds_bridge | grep ddsc`.
+Quick checks on the robot network: `ros2 topic hz /lowstate` (~500 Hz) and
+`ros2 topic echo /api/motion_switcher/response --once` after a `ReleaseMode`.
 
 ## Offline checks (no ROS runtime)
 
@@ -133,7 +148,7 @@ Per robot this runs:
 | `validate_mujoco_against_urdf.py --robot R` | MJCF bodies/joints/inertials/limits/actuators vs URDF |
 | `verify_mujoco_physics.py --robot R` | standing FK matches CHAMP, robot settles at `nominal_height`, feet in contact, IMU body |
 | `verify_mujoco_walk.py --robot R [vx]` | replayed CHAMP trot moves forward (>= 55 % of commanded) |
-| `verify_unitree_lowcmd <urdf> <joints>` (C++) | CHAMP↔Unitree motor index map, URDF limit clamp, CRC32 (only robots with `_lowcmd.yaml`) |
+| `verify_unitree_lowcmd <urdf> <joints>` (C++) | CHAMP↔Unitree motor index map, URDF limit clamp, LowCmd wire layout (812 B) and CRC32 (only robots with `_lowcmd.yaml`) |
 
 `colcon test --packages-select champ_base_gait_planning` registers the same
 checks as ctest, one set per robot found in `urdf/`.
@@ -155,7 +170,7 @@ No code changes. For a robot `<name>`:
 4. `config/<name>_gait.yaml` — start from `go2_gait.yaml` / `b2_gait.yaml` and scale
    `nominal_height`, `swing_height`, `stance_duration`, `max_linear_velocity_*`.
 5. `config/<name>_lowcmd.yaml` — `kp`, `kd`, `motor_mode` and
-   `contact_force_threshold` from the unitree_sdk2 `<name>_stand_example`.
+   `contact_force_threshold` from the unitree_ros2 `<name>_stand_example`.
 6. `config/<name>_sim.yaml` + `python3 tools/generate_mjcf.py <name>` → `mujoco/<name>.xml`
    plus `mujoco/assets/<name>/*.obj` converted from the URDF visual meshes
    (URDF feet must be sphere collisions; otherwise hand-write the MJCF, list
@@ -175,5 +190,7 @@ No code changes. For a robot `<name>`:
 | `/cmd_vel/estimated` | `geometry_msgs/Twist` | out (estimator) |
 | `/odom/raw` | `nav_msgs/Odometry` | out (estimator) |
 | `/foot` | `visualization_msgs/MarkerArray` | out (estimator) |
-| `rt/lowcmd` | Unitree `LowCmd_` DDS | out (`unitree_dds_bridge`, hardware) |
-| `rt/lowstate` | Unitree `LowState_` DDS | in (`unitree_dds_bridge`, hardware) |
+| `/lowcmd` | `unitree_go/LowCmd` (DDS `rt/lowcmd`) | out (`unitree_ros2_bridge`, hardware) |
+| `/lowstate` | `unitree_go/LowState` (DDS `rt/lowstate`) | in (`unitree_ros2_bridge`, hardware) |
+| `/api/motion_switcher/request` | `unitree_api/Request` | out (`unitree_ros2_bridge`, ReleaseMode) |
+| `/api/motion_switcher/response` | `unitree_api/Response` | in (`unitree_ros2_bridge`) |

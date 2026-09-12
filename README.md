@@ -6,7 +6,12 @@ Unitree quadrupeds (branch `UnitreeUniversalCHAMP`, merged from `Go2EDU` and
 
 - `src/champ` — kinematics, leg controller, odometry (headers)
 - `src/champ_msgs` — `ContactsStamped`
-- `src/champ_base_gait_planning` — ROS 2 nodes, robot descriptions, MuJoCo, Sim2Real DDS bridge
+- `src/champ_base_gait_planning` — ROS 2 nodes, robot descriptions, MuJoCo, Sim2Real bridge (`unitree_ros2_bridge`)
+
+Sim2Real talks to the robot through
+[unitree_ros2](https://github.com/unitreerobotics/unitree_ros2): the robot is
+a plain participant of the ROS 2 / CycloneDDS graph (`/lowcmd`, `/lowstate`,
+`/api/motion_switcher/*`), so there is one DDS stack, no `unitree_sdk2`.
 
 One code base drives every robot. Robot-specific values live only in the files
 named after the robot inside `src/champ_base_gait_planning`
@@ -20,13 +25,27 @@ add another Unitree robot without touching code.
 ## Build
 
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash          # or jazzy
 colcon build --packages-select champ champ_msgs champ_base_gait_planning
 source install/setup.bash
 ```
 
-Hardware Sim2Real also needs [unitree_sdk2](https://github.com/unitreerobotics/unitree_sdk2)
-(`--cmake-args -DCMAKE_PREFIX_PATH=/opt/unitree_robotics`) so `unitree_dds_bridge` is compiled.
+Hardware Sim2Real also needs the `unitree_go` / `unitree_api` message
+packages of unitree_ros2 so `unitree_ros2_bridge` is compiled (it is skipped
+with a CMake warning otherwise). Once, on the PC cabled to the robot:
+
+```bash
+sudo apt install ros-$ROS_DISTRO-rmw-cyclonedds-cpp ros-$ROS_DISTRO-rosidl-generator-dds-idl
+git clone https://github.com/unitreerobotics/unitree_ros2 ~/unitree_ros2
+cd ~/unitree_ros2/cyclonedds_ws && colcon build --packages-select unitree_go unitree_api
+```
+
+then `source ~/unitree_ros2/cyclonedds_ws/install/setup.bash` before building
+this workspace (`./run_build_ws.sh` does it when `~/unitree_ros2` exists).
+Follow the unitree_ros2 README to edit its `setup.sh` (ROS distro, NIC name);
+`source ~/unitree_ros2/setup.sh` exports `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`
+and a `CYCLONEDDS_URI` bound to the robot NIC. `ROS_DOMAIN_ID` must stay 0 /
+unset: the robot is on domain 0.
 
 ## Verify (no ROS runtime)
 
@@ -66,9 +85,12 @@ ros2 launch champ_base_gait_planning unitree_sim2real.launch.py robot:=b2 networ
 ros2 launch champ_base_gait_planning unitree_sim2real.launch.py robot:=go2 network_interface:=eth0
 ```
 
-The bridge publishes Unitree DDS `rt/lowcmd` (`LowCmd_`, CRC, motor order
-FR/FL/RR/RL) with the `kp` / `kd` / `motor_mode` from
-`config/<robot>_lowcmd.yaml`, clamps every joint target to the URDF limits of
-the selected robot, and reads `rt/lowstate`. Stand with Sport first; the launch
-releases Sport and holds the pose, then ramps into CHAMP over `ramp_sec`. Do not
-mix with the Sport API.
+`network_interface:=<nic>` sets `RMW_IMPLEMENTATION` / `CYCLONEDDS_URI` for
+every node of the launch (same values as unitree_ros2 `setup.sh`); leave it
+empty when that `setup.sh` is already sourced. The bridge publishes
+`unitree_go/LowCmd` on `/lowcmd` (CRC, motor order FR/FL/RR/RL) with the
+`kp` / `kd` / `motor_mode` from `config/<robot>_lowcmd.yaml`, clamps every
+joint target to the URDF limits of the selected robot, and reads `/lowstate`.
+Stand with Sport first; the launch releases Sport (`/api/motion_switcher`)
+and holds the pose, then ramps into CHAMP over `ramp_sec`. Do not mix with the
+Sport API.
