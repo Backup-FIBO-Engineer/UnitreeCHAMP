@@ -113,7 +113,11 @@ install(DIRECTORY
 # Robot file resolution shared by the launch files and the offline tools.
 ament_python_install_module(tools/champ_robot_files.py)
 # URDF visual mesh (dae/stl) -> MuJoCo OBJ conversion used by generate_mjcf.py.
-ament_python_install_module(tools/champ_mesh_assets.py)
+# Installed next to champ_robot_files.py with a plain install(): the
+# ament_cmake_python shipped with Jazzy rejects a second top-level
+# ament_python_install_module() call (it keys duplicates on the destination
+# directory), and one call already registers the PYTHONPATH hook.
+install(FILES tools/champ_mesh_assets.py DESTINATION ${PYTHON_INSTALL_DIR})
 
 # ---------------------------------------------------------------------------
 # Tests: one set per robot found in urdf/ (<robot>.urdf or <robot>.xacro).
