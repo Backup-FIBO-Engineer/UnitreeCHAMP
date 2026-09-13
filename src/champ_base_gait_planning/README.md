@@ -17,6 +17,7 @@ described only by files named after it inside this package:
 | `config/<robot>_links.yaml` | yes | CHAMP `links_map.*` leg chains + `links_map.base` + `links_map.imu` |
 | `config/<robot>_sim.yaml` | MuJoCo | `sim.*` simulator tuning (actuator gains, joint damping, friction, spawn clearance, velocity limit; foot geom/site names for hand-written models) |
 | `config/<robot>_lowcmd.yaml` | Sim2Real | `unitree_ros2_bridge` parameters: `kp`, `kd`, `motor_mode`, `contact_force_threshold`, `ramp_sec`, topics |
+| `config/<robot>_body_pose.yaml` | optional | `body_pose_controller_node` parameters: IMU body roll/pitch loop gains (`kp`, `ki`, `kd`), `max_correction`, `max_roll` / `max_pitch`, `max_error`, filter, rate, topics |
 | `mujoco/<robot>.xml` | MuJoCo | MJCF model (generated from the URDF or hand-written) |
 | `mujoco/assets/<robot>/*.obj` | MuJoCo | URDF visual meshes converted to OBJ (one per material, generated) |
 | `rviz/<robot>_gait.rviz` | optional | RViz layout for the RViz launch |
@@ -73,6 +74,27 @@ three CHAMP yamls. `champ::URDF::getPose` sums the joint `origin xyz` along the
    `b2_stand_example`. The robot is just another node of the ROS 2 graph
    (CycloneDDS, domain 0); nothing from `unitree_sdk2` is used.
 
+5. **IMU body roll/pitch** (optional, `body_pose_controller_node`): CHAMP's
+   `BodyController` already rotates the stance feet opposite to the requested
+   body roll/pitch/yaw before IK, so `/body_pose` tilts the body open loop. This
+   node closes roll and pitch on the IMU, ~100 Hz, between the user and CHAMP:
+
+   ```
+   /body_pose (desired)  +  IMU orientation  ->  e = desired - measured
+   command = desired + kp*e + ki*integral(e) - kd*body_rate      (bounded, slew-limited)
+   /body_pose/corrected  ->  quadruped_controller_node body_pose  ->  gait + IK + PD as before
+   ```
+
+   The integral term is what cancels a slope (a ground tilt of θ needs a
+   command of −θ); `max_correction` bounds it, `max_roll` / `max_pitch` bound
+   the total command (both at once are checked against the IK reach), an error
+   above `max_error` (fallen / lying / carried) or an IMU older than
+   `imu_timeout_sec` releases the correction. Yaw and position pass through
+   (yaw from an IMU drifts; CHAMP steers yaw with `cmd_vel`). The IMU axes are
+   taken from the URDF fixed joints between `links_map.base` and
+   `links_map.imu` (`body_pose.imu_mount_rpy` overrides them for an external
+   IMU); the ROS-free loop is `include/body_orientation_controller.h`.
+
 ## Build
 
 ```bash
@@ -112,6 +134,23 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 Keep teleop speed below `gait.max_linear_velocity_x` of the robot; CHAMP
 clamps anything above it silently.
 
+Both the MuJoCo and the Sim2Real launch start the IMU body roll/pitch loop
+when `config/<robot>_body_pose.yaml` exists (`body_pose_control:=auto`, the
+default; `true` requires the file, `false` sends `/body_pose` straight to
+CHAMP). `imu_topic:=<topic>` selects the `sensor_msgs/Imu` (fused
+orientation) it reads: the simulator's / bridge's `/imu/data` by default, or an
+external driver such as `/dog_imu_raw_aligned` (any QoS). MuJoCo can stand the
+robot on a slope to exercise it:
+
+```bash
+ros2 launch champ_base_gait_planning mujoco_sim.launch.py robot:=go2 floor_pitch:=0.10 floor_roll:=0.05
+ros2 topic echo /body_pose/measured_rpy    # filtered body roll, pitch (rad); z = IMU yaw
+ros2 topic echo /body_pose/correction      # closed-loop share of the command (rad)
+# desired body pitch +0.10 rad (also while walking); quaternion of RPY (0, 0.10, 0)
+ros2 topic pub -r 20 /body_pose geometry_msgs/msg/Pose "{orientation: {y: 0.04998, w: 0.99875}}"
+ros2 param set /body_pose_controller_node body_pose.enabled false   # runtime pass-through
+```
+
 Real Unitree robot (Sport / motion services **off**, NIC cabled to the robot):
 
 ```bash
@@ -136,6 +175,13 @@ pose is held with extra damping. Never mix this with the Sport API.
 Quick checks on the robot network: `ros2 topic hz /lowstate` (~500 Hz) and
 `ros2 topic echo /api/motion_switcher/response --once` after a `ReleaseMode`.
 
+With the body pose loop on the real robot, the loop reports `IMU roll/pitch
+loop active` only after the bridge is publishing `/lowcmd` and `/imu/data`
+(or the external `imu_topic`) is flowing. First test standing on a wedge and
+watch `/body_pose/correction` settle to minus the wedge angle without
+hunting; then tune `kp` / `ki` / `max_correction` in
+`config/<robot>_body_pose.yaml` (the shipped values are conservative).
+
 ## Offline checks (no ROS runtime)
 
 ```bash
@@ -153,6 +199,7 @@ Per robot this runs:
 | `verify_mujoco_physics.py --robot R` | standing FK matches CHAMP, robot settles at `nominal_height`, feet in contact, IMU body |
 | `verify_mujoco_walk.py --robot R [vx]` | replayed CHAMP trot moves forward (>= 55 % of commanded) |
 | `verify_unitree_lowcmd <urdf> <joints>` (C++) | CHAMP↔Unitree motor index map, URDF limit clamp, LowCmd wire layout (812 B) and CRC32 (only robots with `_lowcmd.yaml`) |
+| `verify_body_pose_controller <urdf> <gait> <joints> <links> <body_pose>` (C++) | quaternion/RPY conventions (incl. a real Unitree IMU sample), URDF IMU mount, CHAMP body-pose sign through BodyController→IK→FK, `max_roll`+`max_pitch` inside the IK reach, closed loop with the robot's gains: slope, trot wobble, set-point, saturation without wind-up, dead-band, IMU loss, not standing, clamp, pass-through (only robots with `_body_pose.yaml`) |
 
 `colcon test --packages-select champ_base_gait_planning` registers the same
 checks as ctest, one set per robot found in `urdf/`.
@@ -175,6 +222,9 @@ No code changes. For a robot `<name>`:
    `nominal_height`, `swing_height`, `stance_duration`, `max_linear_velocity_*`.
 5. `config/<name>_lowcmd.yaml` — `kp`, `kd`, `motor_mode` and
    `contact_force_threshold` from the unitree_ros2 `<name>_stand_example`.
+   Optional `config/<name>_body_pose.yaml` (start from `go2_body_pose.yaml`;
+   `max_roll` / `max_pitch` must fit the leg reach at `nominal_height`, which
+   `verify_body_pose_controller` checks) enables the IMU body roll/pitch loop.
 6. `config/<name>_sim.yaml` + `python3 tools/generate_mjcf.py <name>` → `mujoco/<name>.xml`
    plus `mujoco/assets/<name>/*.obj` converted from the URDF visual meshes
    (URDF feet must be sphere collisions; otherwise hand-write the MJCF, list
@@ -188,6 +238,9 @@ No code changes. For a robot `<name>`:
 | Topic | Type | Direction |
 |-------|------|-----------|
 | `/cmd_vel` | `geometry_msgs/Twist` | in |
+| `/body_pose` | `geometry_msgs/Pose` | in (desired body pose: position offset, roll/pitch/yaw) |
+| `/body_pose/corrected` | `geometry_msgs/Pose` | out (`body_pose_controller_node`) → in (CHAMP `body_pose`, remapped by the launch) |
+| `/body_pose/measured_rpy`, `/body_pose/correction` | `geometry_msgs/Vector3Stamped` | out (`body_pose_controller_node` diagnostics) |
 | `/joint_states` | `sensor_msgs/JointState` | out (controller, or bridge/sim measured) |
 | `/foot_contacts` | `champ_msgs/ContactsStamped` | out |
 | `/imu/data` | `sensor_msgs/Imu` | out (bridge / sim) |
