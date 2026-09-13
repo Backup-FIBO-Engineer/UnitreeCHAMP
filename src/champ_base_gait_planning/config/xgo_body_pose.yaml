@@ -18,13 +18,20 @@
       kd: 0.01
       filter_cutoff_hz: 5.0      # low-pass on the IMU roll/pitch (foot impacts while trotting)
       deadband: 0.005            # ~0.3 deg
-      max_correction: 0.12       # closed-loop share of the command (and integral clamp)
+      max_correction: 0.05       # closed-loop share of the command (and integral clamp)
       max_rate: 0.6              # slew of the correction
-      # Total body roll/pitch handed to CHAMP; short legs (reach 0.146 m at
-      # nominal_height 0.10), so smaller than Go2/B2. verify_body_pose_controller
-      # checks that both at once stay inside the IK reach.
-      max_roll: 0.20
-      max_pitch: 0.20
+      desired_rate: 0.6          # slew of the user's desired roll/pitch/yaw (no steps to the legs)
+      # Total body roll/pitch handed to CHAMP (desired + correction, clamped).
+      # Short legs: reach 0.146 m at nominal_height 0.10, and xgo_gait.yaml
+      # already uses almost all of it while walking, so little is left for a
+      # tilt. Kinematic ceilings (IK reach): pitch 0.24 standing, 0.10 walking
+      # straight at 0.25 m/s, 0.065 at 0.25 m/s + 0.4 rad/s (0.055 with roll at
+      # the same time); roll 0.93 standing, >= 0.40 walking.
+      # verify_body_pose_controller checks max_roll and max_pitch together while
+      # walking at the yaml max velocities. Standing, the desired pitch may be
+      # raised toward 0.20 for a demo, but not while walking.
+      max_roll: 0.10
+      max_pitch: 0.05
       # |e| above this means the robot is not standing (fallen, lying, carried);
       # the correction is released instead of integrated.
       max_error: 0.35

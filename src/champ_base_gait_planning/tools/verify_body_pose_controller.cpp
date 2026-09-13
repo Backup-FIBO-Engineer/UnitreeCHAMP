@@ -13,9 +13,13 @@
 //     command = desired + correction(desired - measured) closes with the
 //     right sign, and max_roll/max_pitch at once stay inside the IK reach at
 //     gait.nominal_height;
+//   * max_roll and max_pitch together while walking at the gait yaml maximum
+//     velocities: every gait tick reachable by IK and inside the URDF joint
+//     limits (plus the kinematic tilt ceilings of the robot, for the record);
 //   * the closed loop with this robot's gains on a simple lagged plant:
 //     slope compensation, set-point tracking, saturation without wind-up,
-//     dead-band, IMU loss release, not-standing release and slew limit.
+//     dead-band, IMU loss release, not-standing release, slew limit,
+//     release (not a step) when disabled, desired-pose ramp.
 #include <algorithm>
 #include <cmath>
 #include <cstdarg>
@@ -26,6 +30,7 @@
 
 #include <body_controller/body_controller.h>
 #include <kinematics/kinematics.h>
+#include <leg_controller/leg_controller.h>
 #include <quadruped_base/quadruped_base.h>
 
 #include "body_orientation_controller.h"
@@ -71,6 +76,7 @@ struct BodyPoseParams
   BodyOrientationConfig config;
   double control_rate{0.0};
   double imu_timeout_sec{0.0};
+  double desired_rate{0.0};
   bool enabled{true};
 };
 
@@ -101,6 +107,7 @@ BodyPoseParams loadBodyPose(const YAML::Node & params)
   p.config.max_pitch = requireDouble(bp, "max_pitch");
   p.control_rate = requireDouble(bp, "control_rate");
   p.imu_timeout_sec = requireDouble(bp, "imu_timeout_sec");
+  p.desired_rate = requireDouble(bp, "desired_rate");
   if (bp["enabled"]) {
     p.enabled = bp["enabled"].as<bool>();
   }
@@ -197,6 +204,119 @@ bool champBodyRpy(
   }
   out = bodyRpyFromFeet(fk_feet);
   return true;
+}
+
+// URDF <limit lower upper> of the 12 CHAMP joints, when every joint has one.
+struct JointLimits
+{
+  bool numeric{false};
+  float lower[12];
+  float upper[12];
+};
+
+JointLimits loadLimits(const champ_tools::RobotConfig & cfg)
+{
+  JointLimits limits;
+  limits.numeric = true;
+  const std::vector<std::string> names = cfg.champJointNames();
+  for (int i = 0; i < 12; ++i) {
+    const auto it = cfg.urdf.joints.find(names[static_cast<size_t>(i)]);
+    if (it == cfg.urdf.joints.end() || !it->second.has_limits || !(it->second.lower < it->second.upper)) {
+      limits.numeric = false;
+      limits.lower[i] = -INFINITY;
+      limits.upper[i] = INFINITY;
+      continue;
+    }
+    limits.lower[i] = static_cast<float>(it->second.lower);
+    limits.upper[i] = static_cast<float>(it->second.upper);
+  }
+  return limits;
+}
+
+float planarReach(const champ::QuadrupedLeg & leg)
+{
+  const float l1 = std::sqrt(leg.lower_leg.x() * leg.lower_leg.x() + leg.lower_leg.z() * leg.lower_leg.z());
+  const float l2 = std::sqrt(leg.foot.x() * leg.foot.x() + leg.foot.z() * leg.foot.z());
+  return l1 + l2;
+}
+
+struct VelocityCase
+{
+  std::string name;
+  float vx;
+  float vy;
+  float wz;
+};
+
+// Gait ticks (200 Hz) at a body velocity with a requested body roll/pitch
+// through BodyController -> LegController -> IK: every tick must be reachable
+// (CHAMP's IK discards the whole plan and the legs freeze otherwise) and
+// inside the URDF joint limits (the bridge clamps, the foot lands elsewhere).
+// Returns an empty string when fine, else what failed first.
+std::string gaitWithTilt(
+  const champ_tools::RobotConfig & cfg, const champ::GaitConfig & gait_in, const JointLimits & limits,
+  double roll, double pitch, const VelocityCase & v, int ticks)
+{
+  champ::GaitConfig gait = gait_in;  // QuadrupedBase takes a non-const reference
+  champ::QuadrupedBase base(gait);
+  cfg.applyTo(base);
+  champ::Kinematics kin(base);
+  champ::BodyController body(base);
+  champ::LegController legs(base, 0);
+  champ::Pose pose;
+  pose.position.z = gait.nominal_height;
+  pose.orientation.roll = static_cast<float>(roll);
+  pose.orientation.pitch = static_cast<float>(pitch);
+  const std::vector<std::string> names = cfg.champJointNames();
+  for (int t = 0; t < ticks; ++t) {
+    geometry::Transformation feet[4];
+    body.poseCommand(feet, pose);
+    champ::Velocities cmd;
+    cmd.linear.x = v.vx;
+    cmd.linear.y = v.vy;
+    cmd.angular.z = v.wz;
+    legs.velocityCommand(feet, cmd, static_cast<champ::PhaseGenerator::Time>(t) * 5000ul);
+    for (int i = 0; i < 4; ++i) {
+      const float len = std::sqrt(
+        feet[i].X() * feet[i].X() + feet[i].Y() * feet[i].Y() + feet[i].Z() * feet[i].Z());
+      if (len >= planarReach(*base.legs[i])) {
+        return fmt("leg %d beyond reach at tick %d", i, t);
+      }
+    }
+    float q[12];
+    for (float & j : q) {
+      j = NAN;
+    }
+    kin.inverse(q, feet);
+    for (int i = 0; i < 12; ++i) {
+      if (!std::isfinite(q[i])) {
+        return fmt("IK NaN at tick %d", t);
+      }
+      if (limits.numeric && (q[i] < limits.lower[i] || q[i] > limits.upper[i])) {
+        return fmt("%s outside URDF limits at tick %d", names[static_cast<size_t>(i)].c_str(), t);
+      }
+    }
+  }
+  return "";
+}
+
+// Largest tilt (both signs, 0.005 rad steps) that gaitWithTilt accepts.
+double tiltCeiling(
+  const champ_tools::RobotConfig & cfg, const champ::GaitConfig & gait, const JointLimits & limits,
+  bool roll_axis, bool pitch_axis, const VelocityCase & v, int ticks)
+{
+  double last_ok = 0.0;
+  for (double a = 0.005; a <= 1.5; a += 0.005) {
+    const double r = roll_axis ? a : 0.0;
+    const double p = pitch_axis ? a : 0.0;
+    if (!gaitWithTilt(cfg, gait, limits, r, p, v, ticks).empty() ||
+      !gaitWithTilt(cfg, gait, limits, -r, -p, v, ticks).empty())
+    {
+      return last_ok;
+    }
+    last_ok = a;
+  }
+  return last_ok;
 }
 
 // First-order plant: the body angle follows the commanded CHAMP body angle
@@ -421,6 +541,57 @@ int main(int argc, char ** argv)
       fmt("worst angle err %.4f rad, fk err %.5f m", worst, worst_err));
   }
 
+  // --- walking with the tilt: gait + IK + URDF joint limits ------------------------
+  {
+    const JointLimits limits = loadLimits(cfg);
+    const float vx = gait.max_linear_velocity_x;
+    const float vy = gait.max_linear_velocity_y;
+    const float wz = gait.max_angular_velocity_z;
+    const std::vector<VelocityCase> cases = {
+      {"standing", 0.0f, 0.0f, 0.0f},
+      {fmt("vx=%.2f", vx), vx, 0.0f, 0.0f},
+      {fmt("vy=%.2f", vy), 0.0f, vy, 0.0f},
+      {fmt("wz=%.2f", wz), 0.0f, 0.0f, wz},
+      {"vx/2 + 2wz/3", vx / 2.0f, 0.0f, wz * 2.0f / 3.0f},
+      {"vx + wz/2", vx, 0.0f, wz / 2.0f},
+      {"vx + vy + wz", vx, vy, wz},
+    };
+    const int ticks = 400;  // 2 s at 200 Hz, several gait cycles
+    std::printf(
+      "kinematic tilt ceilings (rad, both signs; nominal_height %.3f, joint limits %s):\n",
+      gait.nominal_height, limits.numeric ? "from URDF" : "none in URDF");
+    for (const VelocityCase & v : cases) {
+      const std::string level = gaitWithTilt(cfg, gait, limits, 0.0, 0.0, v, ticks);
+      if (!level.empty()) {
+        // The gait yaml alone already leaves the reach here; verify_champ_robot
+        // reports that (with its own tolerance), it is not a body pose matter.
+        std::printf(
+          "  %-14s gait alone not reachable (%s): tilt not evaluated\n", v.name.c_str(), level.c_str());
+        continue;
+      }
+      const double roll_only = tiltCeiling(cfg, gait, limits, true, false, v, ticks);
+      const double pitch_only = tiltCeiling(cfg, gait, limits, false, true, v, ticks);
+      const double both = tiltCeiling(cfg, gait, limits, true, true, v, ticks);
+      std::printf(
+        "  %-14s roll-only %.3f (%.1f deg)  pitch-only %.3f (%.1f deg)  roll=pitch %.3f (%.1f deg)\n",
+        v.name.c_str(), roll_only, roll_only * 180.0 / M_PI, pitch_only, pitch_only * 180.0 / M_PI,
+        both, both * 180.0 / M_PI);
+
+      std::string failure;
+      for (int sr = -1; sr <= 1 && failure.empty(); sr += 2) {
+        for (int sp = -1; sp <= 1 && failure.empty(); sp += 2) {
+          failure = gaitWithTilt(
+            cfg, gait, limits, sr * params.config.max_roll, sp * params.config.max_pitch, v, ticks);
+        }
+      }
+      check(
+        failure.empty(),
+        fmt("max_roll + max_pitch (all signs) while %s: IK reachable, inside URDF joint limits",
+          v.name.c_str()),
+        failure.empty() ? fmt("%d ticks", ticks) : failure);
+    }
+  }
+
   // --- yaml consistency -------------------------------------------------------
   check(
     params.control_rate >= 20.0 && params.control_rate <= 1000.0,
@@ -438,6 +609,10 @@ int main(int argc, char ** argv)
     g.filter_cutoff_hz > 0.0 && g.filter_cutoff_hz < 0.5 * params.control_rate,
     "filter cutoff below Nyquist of the loop", fmt("%.1f Hz", g.filter_cutoff_hz));
   check(g.ki > 0.0, "ki > 0 (steady-state slope compensation needs the integral)");
+  check(
+    g.max_rate > 0.0 && params.desired_rate > 0.0,
+    "max_rate and desired_rate > 0 (the pose handed to CHAMP never steps)",
+    fmt("correction <= %.2f rad/s, desired <= %.2f rad/s", g.max_rate, params.desired_rate));
 
   // --- closed loop with this robot's gains ----------------------------------------
   {
@@ -554,17 +729,62 @@ int main(int argc, char ** argv)
         fmt("cmd %.4f u %.4f", cmd.pitch, cmd.pitch_correction));
     }
 
-    // Pass-through when disabled.
+    // Disabled at runtime while holding a correction: released along max_rate
+    // (no step), then the desired pose passes through unchanged.
     {
       BodyOrientationController ctrl(params.config);
+      BodyMeasurement m;
+      m.pitch = tilt;
+      BodyCommand cmd;
+      for (int i = 0; i < static_cast<int>(3.0 / dt); ++i) {
+        cmd = ctrl.update(RollPitchYaw{}, m, dt);
+      }
       RollPitchYaw desired;
       desired.roll = 0.05;
       desired.pitch = -0.03;
-      const BodyCommand cmd = ctrl.passThrough(desired);
+      double previous = cmd.pitch_correction;
+      double max_step = 0.0;
+      int loops_to_zero = -1;
+      for (int i = 0; i < static_cast<int>(3.0 / dt); ++i) {
+        cmd = ctrl.relax(desired, dt);
+        max_step = std::max(max_step, std::fabs(cmd.pitch_correction - previous));
+        previous = cmd.pitch_correction;
+        if (loops_to_zero < 0 && ctrl.released()) {
+          loops_to_zero = i + 1;
+        }
+      }
       check(
+        loops_to_zero > 1 && max_step <= g.max_rate * dt * 1.0001 + 1e-12 &&
         std::fabs(cmd.roll - 0.05) < 1e-12 && std::fabs(cmd.pitch + 0.03) < 1e-12 &&
         cmd.roll_correction == 0.0 && cmd.pitch_correction == 0.0,
-        "disabled: desired pose passes through unchanged");
+        "disabled: correction released within max_rate, then desired passes through unchanged",
+        fmt("released after %d loops (%.2f s), max step %.5f rad/loop", loops_to_zero,
+          loops_to_zero * dt, max_step));
+    }
+
+    // Desired pose slew (node side): a step to the limit is ramped at desired_rate
+    // and yaw takes the short way around +-pi.
+    {
+      const double step = params.desired_rate * dt;
+      double value = 0.0;
+      int loops = 0;
+      double max_delta = 0.0;
+      while (std::fabs(value - params.config.max_pitch) > 1e-12 && loops < 100000) {
+        const double next = champ_body_pose::slewAngle(value, params.config.max_pitch, step);
+        max_delta = std::max(max_delta, std::fabs(next - value));
+        value = next;
+        ++loops;
+      }
+      const double expected_s = params.config.max_pitch / params.desired_rate;
+      // 3.1 -> -3.1 is 0.083 rad the short way (through +-pi), not -6.2.
+      const double yaw = champ_body_pose::slewAngle(3.1, -3.1, 0.05);
+      const double yaw_moved = champ_body_pose::wrapAngle(yaw - 3.1);
+      check(
+        max_delta <= step + 1e-12 && std::fabs(loops * dt - expected_s) <= dt + 1e-9 &&
+        std::fabs(yaw_moved - 0.05) < 1e-9,
+        "desired step ramped at desired_rate; yaw slews the short way across +-pi",
+        fmt("0 -> %.3f rad in %.2f s (expected %.2f s), yaw 3.1 -> -3.1 first step %+.3f",
+          params.config.max_pitch, loops * dt, expected_s, yaw_moved));
     }
   }
 

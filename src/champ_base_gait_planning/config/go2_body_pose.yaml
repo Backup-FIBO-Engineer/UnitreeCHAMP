@@ -20,10 +20,16 @@
       deadband: 0.005            # ~0.3 deg
       max_correction: 0.15       # closed-loop share of the command (and integral clamp)
       max_rate: 0.5              # slew of the correction
-      # Total body roll/pitch handed to CHAMP; verify_body_pose_controller checks that
-      # both at once stay inside the IK reach at gait.nominal_height.
+      desired_rate: 0.5          # slew of the user's desired roll/pitch/yaw (no steps to the legs)
+      # Total body roll/pitch handed to CHAMP (desired + correction, clamped).
+      # verify_body_pose_controller checks both at once, all sign combinations,
+      # standing and walking at the go2_gait.yaml max velocities, against IK reach
+      # and the URDF joint limits. Kinematic ceilings at nominal_height 0.30
+      # (calf joint limit): pitch 0.47 standing, 0.33 walking straight at 0.5 m/s,
+      # 0.26 at max vx+vy+wz; roll >= 0.70 in every case. 0.20 keeps >= 0.06 rad
+      # of margin while walking at any commanded velocity.
       max_roll: 0.25
-      max_pitch: 0.25
+      max_pitch: 0.20
       # |e| above this means the robot is not standing (fallen, lying, carried);
       # the correction is released instead of integrated.
       max_error: 0.35

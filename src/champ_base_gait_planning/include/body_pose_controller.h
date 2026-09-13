@@ -8,7 +8,9 @@
 //
 // The quadruped controller keeps walking with gait + IK + joint PD exactly as
 // before; only the roll/pitch its body controller receives is closed on the
-// IMU. Position (body height/shift) and yaw pass through unchanged.
+// IMU. Position (body height/shift) passes through unchanged; yaw passes
+// through slew-limited like roll/pitch (a stepped desired pose is ramped at
+// desired_rate so the legs never jump).
 //
 // Robot-agnostic: the IMU mounting comes from the URDF (fixed joints between
 // links_map.base and links_map.imu), gains and angle limits from
@@ -54,6 +56,9 @@ private:
 
   champ_body_pose::BodyOrientationController controller_;
   champ_body_pose::BodyMeasurement measurement_;
+  // Orientation last received on the desired topic, and the slew-limited
+  // (desired_rate) version of it that the loop and CHAMP actually follow.
+  champ_body_pose::RollPitchYaw desired_target_;
   champ_body_pose::RollPitchYaw desired_rpy_;
   geometry_msgs::msg::Point desired_position_;
 
@@ -62,6 +67,7 @@ private:
   std::string imu_topic_;
   double control_rate_{0.0};
   double imu_timeout_sec_{0.0};
+  double desired_rate_{0.0};
   bool imu_frame_warned_{false};
   bool have_imu_{false};
   State state_{State::kNoImu};

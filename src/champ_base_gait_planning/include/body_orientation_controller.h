@@ -16,6 +16,10 @@
 // body controller already accepts is closed on the IMU. Yaw is never taken
 // from the IMU (it drifts and CHAMP steers yaw through cmd_vel).
 //
+// Nothing here ever steps: the correction is slew-limited (max_rate) whether
+// it is tracking, saturating, or being released (IMU lost, not standing, loop
+// disabled); the node slews the desired pose as well (desired_rate).
+//
 // Everything here is dimensionless or in rad / rad/s; the per-robot limits and
 // gains come from config/<robot>_body_pose.yaml through the node.
 #ifndef BODY_ORIENTATION_CONTROLLER_H
@@ -57,6 +61,28 @@ inline double clampAbs(double value, double limit)
     return value;
   }
   return std::max(-limit, std::min(limit, value));
+}
+
+// Shortest signed difference target - current on the circle, in (-pi, pi].
+inline double wrapAngle(double angle)
+{
+  angle = std::fmod(angle + M_PI, 2.0 * M_PI);
+  if (angle < 0.0) {
+    angle += 2.0 * M_PI;
+  }
+  return angle - M_PI;
+}
+
+// Move `current` toward `target` by at most `max_step` (rad) along the
+// shortest arc. max_step <= 0 disables the limit.
+inline double slewAngle(double current, double target, double max_step)
+{
+  if (max_step <= 0.0) {
+    return target;
+  }
+  const double delta = wrapAngle(target - current);
+  return std::fabs(delta) <= max_step ? target :
+         wrapAngle(current + std::copysign(max_step, delta));
 }
 
 inline Quaternion normalized(const Quaternion & q)
@@ -354,18 +380,14 @@ public:
     return compose(desired, u_roll, u_pitch, roll_.errorReset() || pitch_.errorReset());
   }
 
-  // IMU missing or stale: drift the correction back to zero.
+  // IMU missing or stale, or the loop switched off: slew the correction back
+  // to zero (never a step, the legs follow this pose) and clear the state.
   BodyCommand relax(const RollPitchYaw & desired, double dt)
   {
     return compose(desired, roll_.relax(dt), pitch_.relax(dt), false);
   }
 
-  // Controller off: pass the desired pose through (clamped) and clear state.
-  BodyCommand passThrough(const RollPitchYaw & desired)
-  {
-    reset();
-    return compose(desired, 0.0, 0.0, false);
-  }
+  bool released() const {return roll_.correction() == 0.0 && pitch_.correction() == 0.0;}
 
   const AxisController & rollAxis() const {return roll_;}
   const AxisController & pitchAxis() const {return pitch_;}

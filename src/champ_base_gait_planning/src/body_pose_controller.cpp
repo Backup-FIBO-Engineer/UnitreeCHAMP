@@ -115,10 +115,11 @@ BodyPoseController::BodyPoseController()
   RCLCPP_INFO(
     get_logger(),
     "IMU body roll/pitch loop: %s + %s -> %s at %.0f Hz (kp %.3f ki %.3f kd %.3f, "
-    "|u| <= %.3f rad, |roll| <= %.3f, |pitch| <= %.3f, base %s, imu %s)",
+    "|u| <= %.3f rad at <= %.2f rad/s, desired ramped at <= %.2f rad/s, |roll| <= %.3f, "
+    "|pitch| <= %.3f, base %s, imu %s)",
     desired_topic.c_str(), imu_topic_.c_str(), command_topic.c_str(), control_rate_,
-    cfg.gains.kp, cfg.gains.ki, cfg.gains.kd, cfg.gains.max_correction, cfg.max_roll,
-    cfg.max_pitch, base_frame_.c_str(), imu_frame_.c_str());
+    cfg.gains.kp, cfg.gains.ki, cfg.gains.kd, cfg.gains.max_correction, cfg.gains.max_rate,
+    desired_rate_, cfg.max_roll, cfg.max_pitch, base_frame_.c_str(), imu_frame_.c_str());
 }
 
 champ_body_pose::Quaternion BodyPoseController::loadImuMount()
@@ -220,6 +221,12 @@ void BodyPoseController::loadController(const champ_body_pose::Quaternion & base
   if (!std::isfinite(imu_timeout_sec_) || imu_timeout_sec_ <= 0.0) {
     throw std::invalid_argument(std::string(kNodeName) + " body_pose.imu_timeout_sec must be > 0");
   }
+  desired_rate_ = requireNumber(
+    *this, "body_pose.desired_rate",
+    "Slew limit of the desired roll/pitch/yaw handed to CHAMP (rad/s).");
+  if (!std::isfinite(desired_rate_) || desired_rate_ <= 0.0) {
+    throw std::invalid_argument(std::string(kNodeName) + " body_pose.desired_rate must be > 0");
+  }
   // Runtime switch: ros2 param set /body_pose_controller_node body_pose.enabled false
   if (!has_parameter("body_pose.enabled")) {
     declare_parameter("body_pose.enabled", true);
@@ -257,7 +264,7 @@ void BodyPoseController::desiredPoseCallback(geometry_msgs::msg::Pose::ConstShar
       get_logger(), *get_clock(), 5000, "Ignoring a desired body pose with an invalid quaternion");
     return;
   }
-  desired_rpy_ = champ_body_pose::rpyFromQuaternion(toQuaternion(msg->orientation));
+  desired_target_ = champ_body_pose::rpyFromQuaternion(toQuaternion(msg->orientation));
   desired_position_ = msg->position;
 }
 
@@ -270,6 +277,13 @@ void BodyPoseController::controlLoop()
   last_loop_time_ = now;
   dt = std::max(0.5 * nominal_dt, std::min(2.0 * nominal_dt, dt));
 
+  // The desired pose reaches CHAMP ramped, never stepped (the stance feet
+  // follow it directly).
+  const double step = desired_rate_ * dt;
+  desired_rpy_.roll = champ_body_pose::slewAngle(desired_rpy_.roll, desired_target_.roll, step);
+  desired_rpy_.pitch = champ_body_pose::slewAngle(desired_rpy_.pitch, desired_target_.pitch, step);
+  desired_rpy_.yaw = champ_body_pose::slewAngle(desired_rpy_.yaw, desired_target_.yaw, step);
+
   bool enabled = true;
   get_parameter("body_pose.enabled", enabled);
 
@@ -277,7 +291,8 @@ void BodyPoseController::controlLoop()
   double imu_age = 0.0;
   State state = State::kPassThrough;
   if (!enabled) {
-    command = controller_.passThrough(desired_rpy_);
+    // Off: release the correction along max_rate, then pass the desired through.
+    command = controller_.relax(desired_rpy_, dt);
   } else {
     imu_age = have_imu_ ?
       std::chrono::duration<double>(now - last_imu_time_).count() : imu_timeout_sec_ + 1.0;
@@ -302,7 +317,10 @@ void BodyPoseController::reportState(State state, double imu_age)
   switch (state) {
     case State::kPassThrough:
       if (changed) {
-        RCLCPP_INFO(get_logger(), "body_pose.enabled is false: passing the desired pose through");
+        RCLCPP_INFO(
+          get_logger(),
+          "body_pose.enabled is false: releasing the correction at max_rate, then passing the "
+          "desired pose through");
       }
       break;
     case State::kNoImu:
