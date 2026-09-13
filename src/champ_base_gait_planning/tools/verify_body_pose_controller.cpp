@@ -19,7 +19,9 @@
 //   * the closed loop with this robot's gains on a simple lagged plant:
 //     slope compensation, set-point tracking, saturation without wind-up,
 //     dead-band, IMU loss release, not-standing release, slew limit,
-//     release (not a step) when disabled, desired-pose ramp.
+//     release (not a step) when disabled, desired-pose ramp,
+//     unreachable desired (beyond max_pitch) tracked at the yaml limit,
+//     non-finite IMU samples holding the last correction.
 #include <algorithm>
 #include <cmath>
 #include <cstdarg>
@@ -727,6 +729,48 @@ int main(int argc, char ** argv)
         std::fabs(cmd.pitch) <= params.config.max_pitch + 1e-12 && cmd.pitch_correction > 0.0,
         "command clamped to max_pitch even with a positive correction",
         fmt("cmd %.4f u %.4f", cmd.pitch, cmd.pitch_correction));
+    }
+
+    // Unreachable user command (e.g. 15 deg on a robot whose yaml max is smaller):
+    // the PID must behave like a command at the yaml limit (no extra integral
+    // wind-up, not flagged as a fall).
+    {
+      const LoopResult at_lim = runLoop(params, 0.0, params.config.max_pitch, 5.0, false);
+      const LoopResult over = runLoop(params, 0.0, 2.0 * params.config.max_pitch, 5.0, false);
+      check(
+        !over.any_reset &&
+        std::fabs(over.final_error - params.config.max_pitch) < 0.02 &&
+        std::fabs(over.final_correction - at_lim.final_correction) < 0.02 &&
+        std::fabs(over.final_correction) < 0.5 * g.max_correction + 1e-6,
+        "desired beyond max_pitch: tracks the yaml limit without extra wind-up or not-standing",
+        fmt("err %.4f u %.4f (at-limit u %.4f) reset %d",
+          over.final_error, over.final_correction, at_lim.final_correction,
+          static_cast<int>(over.any_reset)));
+    }
+
+    // Non-finite IMU sample: hold the last correction (never publish NaN to CHAMP).
+    {
+      BodyOrientationController ctrl(params.config);
+      BodyMeasurement m;
+      m.pitch = 0.05;
+      BodyCommand cmd;
+      for (int i = 0; i < 50; ++i) {
+        cmd = ctrl.update(RollPitchYaw{}, m, dt);
+      }
+      const double held = cmd.pitch_correction;
+      m.pitch = NAN;
+      cmd = ctrl.update(RollPitchYaw{}, m, dt);
+      check(
+        std::isfinite(cmd.pitch) && std::isfinite(cmd.pitch_correction) &&
+        std::fabs(cmd.pitch_correction - held) < 1e-15,
+        "NaN measurement: last correction held",
+        fmt("held %.4f after %.4f", held, cmd.pitch_correction));
+      m.pitch = 0.05;
+      m.pitch_rate = NAN;
+      cmd = ctrl.update(RollPitchYaw{}, m, dt);
+      check(
+        std::isfinite(cmd.pitch_correction) && std::fabs(cmd.pitch_correction - held) < 1e-15,
+        "NaN gyro: last correction held");
     }
 
     // Disabled at runtime while holding a correction: released along max_rate

@@ -214,7 +214,11 @@ public:
   // One step with a fresh measurement. Returns the correction u (rad).
   double update(double desired, double measured, double rate, double dt)
   {
-    if (!(dt > 0.0) || !std::isfinite(dt)) {
+    // Hold the last correction rather than integrating a NaN into the pose
+    // CHAMP's legs follow.
+    if (!(dt > 0.0) || !std::isfinite(dt) ||
+      !std::isfinite(desired) || !std::isfinite(measured) || !std::isfinite(rate))
+    {
       return u_;
     }
     filter(measured, rate, dt);
@@ -375,16 +379,17 @@ public:
 
   BodyCommand update(const RollPitchYaw & desired, const BodyMeasurement & measured, double dt)
   {
-    const double u_roll = roll_.update(desired.roll, measured.roll, measured.roll_rate, dt);
-    const double u_pitch = pitch_.update(desired.pitch, measured.pitch, measured.pitch_rate, dt);
-    return compose(desired, u_roll, u_pitch, roll_.errorReset() || pitch_.errorReset());
+    const RollPitchYaw sat = saturateDesired(desired);
+    const double u_roll = roll_.update(sat.roll, measured.roll, measured.roll_rate, dt);
+    const double u_pitch = pitch_.update(sat.pitch, measured.pitch, measured.pitch_rate, dt);
+    return compose(sat, u_roll, u_pitch, roll_.errorReset() || pitch_.errorReset());
   }
 
   // IMU missing or stale, or the loop switched off: slew the correction back
   // to zero (never a step, the legs follow this pose) and clear the state.
   BodyCommand relax(const RollPitchYaw & desired, double dt)
   {
-    return compose(desired, roll_.relax(dt), pitch_.relax(dt), false);
+    return compose(saturateDesired(desired), roll_.relax(dt), pitch_.relax(dt), false);
   }
 
   bool released() const {return roll_.correction() == 0.0 && pitch_.correction() == 0.0;}
@@ -393,6 +398,17 @@ public:
   const AxisController & pitchAxis() const {return pitch_;}
 
 private:
+  // The PID never sees a roll/pitch beyond the yaml limits, so an out-of-range
+  // user command (e.g. 15 deg on a robot whose max_pitch is 11.5 deg) tracks
+  // the limit instead of winding the integral against an unreachable set-point.
+  RollPitchYaw saturateDesired(const RollPitchYaw & desired) const
+  {
+    RollPitchYaw sat = desired;
+    sat.roll = std::isfinite(desired.roll) ? clampAbs(desired.roll, config_.max_roll) : 0.0;
+    sat.pitch = std::isfinite(desired.pitch) ? clampAbs(desired.pitch, config_.max_pitch) : 0.0;
+    return sat;
+  }
+
   BodyCommand compose(const RollPitchYaw & desired, double u_roll, double u_pitch, bool error_reset) const
   {
     BodyCommand cmd;

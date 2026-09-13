@@ -206,13 +206,14 @@ The yaml value must hold for every velocity the gait yaml allows, so it
 follows the walking ceiling with margin (Go2 pitch 0.20 keeps ≥ 0.06 rad to
 the calf joint limit; B2 0.25 keeps ≥ 0.12 rad). Beyond the ceiling CHAMP's
 IK returns NaN and the legs freeze for that tick; a joint beyond its URDF
-limit is clamped by the bridge (the foot lands elsewhere). A 15° nose-up
-(0.262 rad) therefore fits B2 at every velocity (raise `max_pitch` to 0.30
-and re-run `tools/run_offline_checks.sh b2`, which re-checks it), but on Go2
-it sits above the ceiling at max vx + vy + wz (0.26 rad): the offline check
-rejects `max_pitch >= 0.27` unless the gait yaml velocities are lowered too
-(standing the Go2 ceiling is 0.47, walking straight 0.33). XGO cannot tilt
-that far while walking. Roll and pitch at once, `position.z` offsets and swing height
+limit is clamped by the bridge (the foot lands elsewhere). A commanded 15°
+nose-up (0.262 rad) is **clamped to the yaml `max_pitch`**, not tracked as 15°:
+Go2 holds 11.5°, B2 14.3°, XGO 2.9°. To actually track 15°, raise the yaml
+value and re-run `tools/run_offline_checks.sh <robot>`: B2 accepts 0.30 (17°)
+at every gait velocity; Go2's walking vx+vy+wz ceiling is 0.26 rad so the
+check rejects `max_pitch >= 0.27` unless the gait yaml velocities are lowered
+too (standing 0.47, walking straight 0.33). XGO cannot tilt that far while
+walking. Roll and pitch at once, `position.z` offsets and swing height
 all consume the same leg reach, so keep `position.z` at 0 when using the
 large tilts. Re-run `bash tools/run_offline_checks.sh <robot>` after any
 change of these values: the walking-with-tilt check fails when the new limit
@@ -328,7 +329,7 @@ Per robot this runs:
 | `verify_mujoco_physics.py --robot R` | standing FK matches CHAMP, robot settles at `nominal_height`, feet in contact, IMU body |
 | `verify_mujoco_walk.py --robot R [vx]` | replayed CHAMP trot moves forward (>= 55 % of commanded) |
 | `verify_unitree_lowcmd <urdf> <joints>` (C++) | CHAMP↔Unitree motor index map, URDF limit clamp, LowCmd wire layout (812 B) and CRC32 (only robots with `_lowcmd.yaml`) |
-| `verify_body_pose_controller <urdf> <gait> <joints> <links> <body_pose>` (C++) | quaternion/RPY conventions (incl. a real Unitree IMU sample), URDF IMU mount, CHAMP body-pose sign through BodyController→IK→FK, `max_roll`+`max_pitch` (all signs) reachable by IK and inside the URDF joint limits standing and walking at the gait yaml max velocities (prints the kinematic tilt ceilings), closed loop with the robot's gains: slope, trot wobble, set-point, saturation without wind-up, dead-band, IMU loss, not standing, clamp, ramped release when disabled, desired-pose ramp (only robots with `_body_pose.yaml`) |
+| `verify_body_pose_controller <urdf> <gait> <joints> <links> <body_pose>` (C++) | quaternion/RPY conventions (incl. a real Unitree IMU sample), URDF IMU mount, CHAMP body-pose sign through BodyController→IK→FK, `max_roll`+`max_pitch` (all signs) reachable by IK and inside the URDF joint limits standing and walking at the gait yaml max velocities (prints the kinematic tilt ceilings), closed loop with the robot's gains: slope, trot wobble, set-point, saturation without wind-up, dead-band, IMU loss, not standing, clamp, unreachable desired tracked at the yaml limit, NaN IMU sample holds the last correction, ramped release when disabled, desired-pose ramp (only robots with `_body_pose.yaml`) |
 
 `colcon test --packages-select champ_base_gait_planning` registers the same
 checks as ctest, one set per robot found in `urdf/`.

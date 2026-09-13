@@ -250,9 +250,26 @@ void BodyPoseController::imuCallback(sensor_msgs::msg::Imu::ConstSharedPtr msg)
       "anyway (set body_pose.imu_mount_rpy if the axes differ)",
       msg->header.frame_id.c_str(), imu_frame_.c_str(), imu_frame_.c_str());
   }
-  const champ_body_pose::Vector3 rate{
+  champ_body_pose::Vector3 rate{
     msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z};
-  measurement_ = controller_.measure(toQuaternion(msg->orientation), rate);
+  if (!std::isfinite(rate.x) || !std::isfinite(rate.y) || !std::isfinite(rate.z)) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "IMU on %s has a non-finite gyro; damping term uses 0 this sample",
+      imu_topic_.c_str());
+    rate = champ_body_pose::Vector3{};
+  }
+  const champ_body_pose::BodyMeasurement measured =
+    controller_.measure(toQuaternion(msg->orientation), rate);
+  if (!std::isfinite(measured.roll) || !std::isfinite(measured.pitch) ||
+    !std::isfinite(measured.roll_rate) || !std::isfinite(measured.pitch_rate))
+  {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000, "IMU on %s produced a non-finite base roll/pitch; ignored",
+      imu_topic_.c_str());
+    return;
+  }
+  measurement_ = measured;
   have_imu_ = true;
   last_imu_time_ = Clock::now();
 }
@@ -264,7 +281,31 @@ void BodyPoseController::desiredPoseCallback(geometry_msgs::msg::Pose::ConstShar
       get_logger(), *get_clock(), 5000, "Ignoring a desired body pose with an invalid quaternion");
     return;
   }
-  desired_target_ = champ_body_pose::rpyFromQuaternion(toQuaternion(msg->orientation));
+  if (!std::isfinite(msg->position.x) || !std::isfinite(msg->position.y) ||
+    !std::isfinite(msg->position.z))
+  {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000, "Ignoring a desired body pose with a non-finite position");
+    return;
+  }
+  const champ_body_pose::RollPitchYaw rpy =
+    champ_body_pose::rpyFromQuaternion(toQuaternion(msg->orientation));
+  if (!std::isfinite(rpy.roll) || !std::isfinite(rpy.pitch) || !std::isfinite(rpy.yaw)) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000, "Ignoring a desired body pose whose RPY is not finite");
+    return;
+  }
+  const auto & cfg = controller_.config();
+  desired_target_ = rpy;
+  desired_target_.roll = champ_body_pose::clampAbs(rpy.roll, cfg.max_roll);
+  desired_target_.pitch = champ_body_pose::clampAbs(rpy.pitch, cfg.max_pitch);
+  if (std::fabs(rpy.roll) > cfg.max_roll + 1e-6 || std::fabs(rpy.pitch) > cfg.max_pitch + 1e-6) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "Desired body pose (roll %.3f, pitch %.3f rad) exceeds max_roll %.3f / max_pitch %.3f; "
+      "clamped (this is the yaml limit, not the kinematic ceiling)",
+      rpy.roll, rpy.pitch, cfg.max_roll, cfg.max_pitch);
+  }
   desired_position_ = msg->position;
 }
 
@@ -349,6 +390,16 @@ void BodyPoseController::reportState(State state, double imu_age)
 
 void BodyPoseController::publishCommand(const champ_body_pose::BodyCommand & command)
 {
+  if (!std::isfinite(command.roll) || !std::isfinite(command.pitch) ||
+    !std::isfinite(desired_rpy_.yaw) ||
+    !std::isfinite(desired_position_.x) || !std::isfinite(desired_position_.y) ||
+    !std::isfinite(desired_position_.z))
+  {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 2000,
+      "Skipping a non-finite body pose command; CHAMP keeps the last pose");
+    return;
+  }
   geometry_msgs::msg::Pose pose;
   pose.position = desired_position_;
   pose.orientation = toMsg(
