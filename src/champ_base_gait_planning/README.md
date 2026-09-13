@@ -142,6 +142,7 @@ MuJoCo (`headless:=true` for no viewer):
 ```bash
 ros2 launch champ_base_gait_planning mujoco_sim.launch.py robot:=b2
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
+# or Xbox One S 1708 Bluetooth (cmd_vel + body pose): ros2 launch xbox_one_s_teleop teleop.launch.py robot:=b2
 ```
 
 Keep teleop speed below `gait.max_linear_velocity_x` of the robot; CHAMP

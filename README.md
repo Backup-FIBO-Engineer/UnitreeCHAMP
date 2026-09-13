@@ -89,6 +89,17 @@ ros2 launch champ_base_gait_planning mujoco_sim.launch.py robot:=b2     # or rob
 Teleop: keep the speed below `gait.max_linear_velocity_x` of the robot
 (`config/<robot>_gait.yaml`); CHAMP clamps anything above it.
 
+Xbox One S (Model 1708, Bluetooth) — locomotion `/cmd_vel` and body-pose
+mode on the same pad (`src/xbox_one_s_teleop`):
+
+```bash
+./run_xbox_teleop.sh go2          # or robot:=b2 / xgo; do not run keyboard teleop too
+```
+
+LB toggles walk ↔ body pose, hold RB to walk (left stick vx/vy, right stick
+yaw), right stick in pose mode rolls/pitches the body, A resets to level.
+Pairing, `jstest`, and the button table: `src/xbox_one_s_teleop/README.md`.
+
 IMU body roll/pitch loop (on by default when `config/<robot>_body_pose.yaml`
 exists; `body_pose_control:=false` turns it off):
 

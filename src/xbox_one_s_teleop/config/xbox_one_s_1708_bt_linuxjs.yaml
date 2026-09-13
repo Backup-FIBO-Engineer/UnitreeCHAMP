@@ -1,0 +1,32 @@
+# Same pad, Linux joystick API order (jstest / xpad / xpadneo / joy_linux_node).
+# LT/RT occupy axes 2 and 5, so the right stick is 3 and 4.
+# Launch with driver:=linux
+/**:
+  ros__parameters:
+    joy_topic: joy
+    cmd_vel_topic: cmd_vel
+    body_pose_topic: body_pose
+    publish_rate: 20.0
+    joy_timeout_sec: 0.5
+    deadzone: 0.15
+    axis_vx: 1
+    axis_vy: 0
+    axis_yaw: 3
+    axis_roll: 3
+    axis_pitch: 4
+    invert_vx: true
+    invert_vy: false
+    invert_yaw: false
+    invert_roll: false
+    invert_pitch: false
+    button_mode: 4
+    button_deadman: 5
+    button_reset: 0
+    button_stop: 1
+    max_linear_x: 0.5
+    max_linear_y: 0.15
+    max_angular_z: 0.6
+    max_roll: 0.25
+    max_pitch: 0.20
+    roll_rate: 0.4
+    pitch_rate: 0.4
