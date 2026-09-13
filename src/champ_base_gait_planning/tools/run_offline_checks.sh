@@ -7,7 +7,8 @@
 #
 # A robot is urdf/<robot>.urdf|.xacro + config/<robot>_{gait,joints,links}.yaml.
 # MuJoCo checks run when mujoco/<robot>.xml exists, the LowCmd check when
-# config/<robot>_lowcmd.yaml exists. Needs python3 (numpy, PyYAML, mujoco),
+# config/<robot>_lowcmd.yaml exists, the IMU body pose loop check when
+# config/<robot>_body_pose.yaml exists. Needs python3 (numpy, PyYAML, mujoco),
 # g++, pkg-config, tinyxml2 and yaml-cpp dev packages. verify_unitree_lowcmd
 # also needs urdfdom (found through pkg-config or a sourced ROS 2 prefix) and
 # is skipped with a warning otherwise.
@@ -41,6 +42,9 @@ g++ "${CXXFLAGS_COMMON[@]}" "${XML_YAML_CFLAGS[@]}" \
   -o "${BUILD_DIR}/verify_champ_robot" tools/verify_champ_robot.cpp "${XML_YAML_LIBS[@]}"
 g++ "${CXXFLAGS_COMMON[@]}" "${XML_YAML_CFLAGS[@]}" \
   -o "${BUILD_DIR}/dump_champ_gait" tools/dump_champ_gait.cpp "${XML_YAML_LIBS[@]}"
+g++ "${CXXFLAGS_COMMON[@]}" -I include "${XML_YAML_CFLAGS[@]}" \
+  -o "${BUILD_DIR}/verify_body_pose_controller" tools/verify_body_pose_controller.cpp \
+  "${XML_YAML_LIBS[@]}"
 
 LOWCMD_BIN=""
 URDFDOM_CFLAGS=()
@@ -106,6 +110,12 @@ for robot in "${ROBOTS[@]}"; do
     else
       echo "[WARN] ${robot}: verify_unitree_lowcmd skipped (urdfdom missing)"
     fi
+  fi
+
+  if [ -f "config/${robot}_body_pose.yaml" ]; then
+    step "${robot}: IMU body roll/pitch loop"
+    "${BUILD_DIR}/verify_body_pose_controller" "${urdf}" "${gait}" "${joints}" "${links}" \
+      "config/${robot}_body_pose.yaml"
   fi
 done
 
