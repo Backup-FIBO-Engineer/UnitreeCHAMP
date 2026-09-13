@@ -9,6 +9,7 @@ A robot is described only by files named after it inside this package:
     config/<robot>_links.yaml                CHAMP links_map (+ base, imu)
     config/<robot>_sim.yaml                  optional MuJoCo tuning (sim.*)
     config/<robot>_lowcmd.yaml               optional unitree_ros2_bridge gains
+    config/<robot>_body_pose.yaml            optional IMU body roll/pitch loop
     mujoco/<robot>.xml                       optional MuJoCo model
     rviz/<robot>_gait.rviz                   optional RViz layout
 
@@ -54,6 +55,7 @@ class RobotFiles:
     links_yaml: Path
     sim_yaml: Optional[Path]
     lowcmd_yaml: Optional[Path]
+    body_pose_yaml: Optional[Path]
     mujoco_xml: Optional[Path]
     rviz_config: Optional[Path]
 
@@ -73,6 +75,26 @@ class RobotFiles:
         params = load_ros_params(self.sim_yaml) if self.sim_yaml else {}
         sim = params.get('sim', {})
         return sim if isinstance(sim, dict) else {}
+
+
+def resolve_optional_feature(files: RobotFiles, requested: str, label: str,
+                             path: Optional[Path], file_hint: str) -> bool:
+    """Launch switch for a feature that needs an optional per-robot file.
+
+    requested: 'auto' -> on when the robot ships the file, 'true' -> required
+    (error when the file is missing), 'false' -> off.
+    """
+    value = requested.strip().lower()
+    if value in ('false', '0', 'no', 'off'):
+        return False
+    if value in ('auto', ''):
+        return path is not None
+    if value in ('true', '1', 'yes', 'on'):
+        if path is None:
+            raise FileNotFoundError(
+                f"robot '{files.robot}' has no {file_hint}; {label} cannot be enabled")
+        return True
+    raise ValueError(f'{label}: expected auto, true or false, got {requested!r}')
 
 
 def available_robots(package_dir: Path | str = SOURCE_PACKAGE_DIR) -> List[str]:
@@ -116,6 +138,7 @@ def resolve_robot_files(package_dir: Path | str, robot: str) -> RobotFiles:
         links_yaml=required(f'config/{robot}_links.yaml'),
         sim_yaml=optional(f'config/{robot}_sim.yaml'),
         lowcmd_yaml=optional(f'config/{robot}_lowcmd.yaml'),
+        body_pose_yaml=optional(f'config/{robot}_body_pose.yaml'),
         mujoco_xml=optional(f'mujoco/{robot}.xml'),
         rviz_config=optional(f'rviz/{robot}_gait.rviz'),
     )

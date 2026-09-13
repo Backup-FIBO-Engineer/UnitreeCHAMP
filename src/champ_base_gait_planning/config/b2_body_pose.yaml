@@ -1,0 +1,34 @@
+# body_pose_controller_node parameters for B2: IMU-closed body roll/pitch on
+# top of CHAMP (gait + IK + joint PD unchanged). The IMU mounting comes from
+# urdf/b2.urdf + b2_links.yaml (links_map.base -> links_map.imu), passed by
+# the launch alongside this file. Angles in rad, rates in rad/s.
+/**:
+  ros__parameters:
+    # sensor_msgs/Imu with a fused orientation: /imu/data from unitree_ros2_bridge
+    # (/lowstate imu_state) or mujoco_sim.py. Override per launch (imu_topic:=...).
+    imu_topic: imu/data
+    desired_pose_topic: body_pose
+    command_pose_topic: body_pose/corrected
+    body_pose:
+      enabled: true
+      control_rate: 100.0
+      # command = desired + kp*e + ki*integral(e) - kd*body_rate, e = desired - measured.
+      # Heavier body than Go2: slower integral and slew.
+      kp: 0.4
+      ki: 1.5
+      kd: 0.03
+      filter_cutoff_hz: 4.0      # low-pass on the IMU roll/pitch (foot impacts while trotting)
+      deadband: 0.005            # ~0.3 deg
+      max_correction: 0.15       # closed-loop share of the command (and integral clamp)
+      max_rate: 0.4              # slew of the correction
+      # Total body roll/pitch handed to CHAMP; verify_body_pose_controller checks that
+      # both at once stay inside the IK reach at gait.nominal_height.
+      max_roll: 0.25
+      max_pitch: 0.25
+      # |e| above this means the robot is not standing (fallen, lying, carried);
+      # the correction is released instead of integrated.
+      max_error: 0.35
+      imu_timeout_sec: 0.2
+      # Optional: [roll, pitch, yaw] of the IMU axes in the base frame when the
+      # IMU topic is not expressed in links_map.imu (external driver). Default: URDF.
+      # imu_mount_rpy: [0.0, 0.0, 0.0]
