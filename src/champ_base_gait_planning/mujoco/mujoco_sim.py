@@ -17,6 +17,10 @@ Topic convention:
 Joint/actuator addresses are resolved from names instead of assuming qpos/qvel
 slices, and the free-joint linear velocity is rotated from world into the base
 frame with the full quaternion, not yaw only.
+
+`floor_roll` / `floor_pitch` (rad, default 0) tilt the floor plane about the
+world X / Y axes through the origin, e.g. to check that the IMU body pose loop
+levels the body on a slope.
 """
 
 from __future__ import annotations
@@ -70,6 +74,19 @@ def _world_to_body_vector(quat_wxyz: np.ndarray, vector_world: np.ndarray) -> np
          1.0 - 2.0 * (qx * qx + qy * qy)],
     ])
     return rotation_world_from_body.T @ vector_world
+
+
+def _quat_wxyz_from_rpy(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    """MuJoCo (w, x, y, z) quaternion of Rz(yaw) Ry(pitch) Rx(roll)."""
+    cr, sr = math.cos(roll * 0.5), math.sin(roll * 0.5)
+    cp, sp = math.cos(pitch * 0.5), math.sin(pitch * 0.5)
+    cy, sy = math.cos(yaw * 0.5), math.sin(yaw * 0.5)
+    return np.array([
+        cr * cp * cy + sr * sp * sy,
+        sr * cp * cy - cr * sp * sy,
+        cr * sp * cy + sr * cp * sy,
+        cr * cp * sy - sr * sp * cy,
+    ], dtype=np.float64)
 
 
 def _urdf_velocity_limits(urdf_xml: str, joint_names: List[str]) -> np.ndarray:
@@ -156,6 +173,17 @@ class MujocoSim(Node):
             self.imu_lever_arm = np.zeros(3, dtype=np.float64)
 
         self.floor_geom_id = self._require_id(mujoco.mjtObj.mjOBJ_GEOM, 'floor')
+        # Optional slope through the origin (rad), to exercise the IMU body pose loop.
+        floor_roll = float(self._param('floor_roll', 0.0))
+        floor_pitch = float(self._param('floor_pitch', 0.0))
+        if not (math.isfinite(floor_roll) and math.isfinite(floor_pitch)):
+            raise ValueError('floor_roll / floor_pitch must be finite (rad)')
+        if floor_roll != 0.0 or floor_pitch != 0.0:
+            self.model.geom_quat[self.floor_geom_id] = _quat_wxyz_from_rpy(
+                floor_roll, floor_pitch, 0.0)
+            self.get_logger().info(
+                f'floor tilted: roll={floor_roll:.4f} rad, pitch={floor_pitch:.4f} rad'
+            )
         self.foot_geom_ids = np.array([
             self._require_id(mujoco.mjtObj.mjOBJ_GEOM, name) for name in foot_geom_names
         ], dtype=np.int32)
