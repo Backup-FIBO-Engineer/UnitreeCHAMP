@@ -65,8 +65,9 @@ Per robot: URDF→CHAMP contract, IK/FK, gait at yaml limits, odometry
 sign/scale, MuJoCo model vs URDF, MuJoCo standing FK, forward-walk tracking,
 (robots with `_lowcmd.yaml`) the Unitree motor map, URDF limit clamp and CRC,
 and (robots with `_body_pose.yaml`) the IMU body pose loop: conventions,
-CHAMP body-pose sign, IK reach of the angle limits, slope / set-point /
-saturation / release behaviour with the robot's gains.
+CHAMP body-pose sign, the angle limits reachable by IK and inside the URDF
+joint limits standing and walking at the gait yaml velocities, slope /
+set-point / saturation / release / ramp behaviour with the robot's gains.
 `colcon test --packages-select champ_base_gait_planning` runs the same checks.
 
 ## Run
@@ -92,14 +93,21 @@ IMU body roll/pitch loop (on by default when `config/<robot>_body_pose.yaml`
 exists; `body_pose_control:=false` turns it off):
 
 ```bash
-# stand on a slope: the body stays level while the loop runs
+# stand on a slope: the body stays level while the loop runs (standing and walking)
 ros2 launch champ_base_gait_planning mujoco_sim.launch.py robot:=go2 floor_pitch:=0.10 floor_roll:=0.05
-# ask for a body pitch of +0.10 rad while walking; roll/pitch are closed on the IMU
-ros2 topic pub -r 20 /body_pose geometry_msgs/msg/Pose "{orientation: {y: 0.04998, w: 0.99875}}"
+# ask for a nose-up of 0.10 rad (RPY 0, -0.10, 0; +pitch = nose down), ramped at desired_rate
+ros2 topic pub --once /body_pose geometry_msgs/msg/Pose "{orientation: {y: -0.04998, w: 0.99875}}"
 ros2 topic echo /body_pose/measured_rpy      # filtered body roll, pitch (rad), IMU yaw
 ros2 topic echo /body_pose/correction        # closed-loop share of the command (rad)
-ros2 param set /body_pose_controller_node body_pose.enabled false   # pass /body_pose through
+ros2 param set /body_pose_controller_node body_pose.enabled false   # release the correction (ramped), pass /body_pose through
 ```
+
+Limits (`config/<robot>_body_pose.yaml`, total roll / pitch handed to CHAMP):
+Go2 0.25 / 0.20 rad, B2 0.25 / 0.25 rad, XGO 0.10 / 0.05 rad; the correction
+is bounded to 0.15 rad (XGO 0.05) and shares that budget. They are set from
+the kinematic ceilings measured by `verify_body_pose_controller` while walking
+at the gait yaml maximum velocities; see the per-robot table and the Sim2Real
+procedure / cautions in `src/champ_base_gait_planning/README.md`.
 
 Real robot (Sport off, NIC toward the robot):
 
@@ -125,8 +133,9 @@ The same launch starts the IMU body roll/pitch loop for `go2` / `b2`
 works too, e.g. `imu_topic:=/dog_imu_raw_aligned` (best-effort or reliable
 publishers both match). The loop only starts once the bridge is on `/lowcmd`
 and the IMU is flowing; a body tilt beyond `body_pose.max_error` (not
-standing) or an IMU older than `imu_timeout_sec` releases the correction.
-Tune `config/<robot>_body_pose.yaml` on the robot with
+standing) or an IMU older than `imu_timeout_sec` releases the correction
+(ramped at `max_rate`, never a step; the desired pose is ramped at
+`desired_rate` as well). Tune `config/<robot>_body_pose.yaml` on the robot with
 `/body_pose/measured_rpy` and `/body_pose/correction`; start with the shipped
 `kp`/`ki` and `max_correction`, and raise them only once the standing robot
 levels on a wedge without hunting.
