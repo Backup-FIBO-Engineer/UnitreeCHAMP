@@ -305,7 +305,11 @@ struct BodyCommand
 class BodyOrientationController
 {
 public:
-  explicit BodyOrientationController(const BodyOrientationConfig & config = BodyOrientationConfig{})
+  // Unconfigured until configure(): every limit is zero, so update() would
+  // only ever return zero corrections.
+  BodyOrientationController() = default;
+
+  explicit BodyOrientationController(const BodyOrientationConfig & config)
   {
     configure(config);
   }

@@ -181,6 +181,9 @@ class MujocoSim(Node):
         if floor_roll != 0.0 or floor_pitch != 0.0:
             self.model.geom_quat[self.floor_geom_id] = _quat_wxyz_from_rpy(
                 floor_roll, floor_pitch, 0.0)
+            # World-body geoms are static: MuJoCo caches their pose in
+            # mj_setConst, mj_forward alone does not pick up the new quaternion.
+            mujoco.mj_setConst(self.model, self.data)
             self.get_logger().info(
                 f'floor tilted: roll={floor_roll:.4f} rad, pitch={floor_pitch:.4f} rad'
             )
