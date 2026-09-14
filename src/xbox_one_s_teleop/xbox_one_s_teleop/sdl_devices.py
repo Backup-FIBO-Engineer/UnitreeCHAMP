@@ -66,8 +66,8 @@ def missing_pad_error(devices: Sequence[Device]) -> str:
         f'Currently listed: {listed}. '
         '/dev/input/js0 is not the Xbox (often mouce-library-fake-mouse / RustDesk). '
         'The 1708 must appear in /proc/bus/input/devices with a jsN handler. '
-        'bluetoothctl Connected: yes is not enough — load hidp, disable Bluetooth '
-        'ERTM, install xpadneo, then ros2 run joy joy_enumerate_devices must show Xbox.'
+        'If dmesg shows microsoft 0005:045E:02FD parse failed / error -22, '
+        'install xpadneo and reboot (hid-microsoft cannot parse 1708 Bluetooth). '
     )
 
 

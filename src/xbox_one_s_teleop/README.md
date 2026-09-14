@@ -48,15 +48,31 @@ bluetoothctl disconnect AA:BB:CC:DD:EE:FF
 bluetoothctl connect AA:BB:CC:DD:EE:FF
 ```
 
-Then install [xpadneo](https://github.com/atar-axis/xpadneo) so the HID becomes a joystick:
+If `dmesg` shows `microsoft 0005:045E:02FD` **parse failed** / **error -22**
+(`unknown main item tag 0x0`, `unbalanced collection`), stock
+`hid-microsoft` cannot read the 1708 Bluetooth HID descriptor. Bluetooth
+stays connected but **no input node is created**. Install
+[xpadneo](https://github.com/atar-axis/xpadneo) (not optional on this pad):
 
 ```bash
 sudo apt install dkms git linux-headers-$(uname -r)
 git clone https://github.com/atar-axis/xpadneo.git
 cd xpadneo && sudo ./install.sh
-# reconnect the pad (or reboot), then:
-ros2 run joy joy_enumerate_devices   # need a line named Xbox
+sudo reboot
 ```
+
+After reboot, connect the pad, then `dmesg` should mention `hid-xpadneo`
+(not `microsoft: probe ... failed`). Confirm:
+
+```bash
+lsmod | grep xpadneo
+grep -A8 -i xbox /proc/bus/input/devices    # Handlers must include jsN
+source /opt/ros/humble/setup.bash
+ros2 run joy joy_enumerate_devices          # need a line named Xbox
+```
+
+USB cable into the 1708 also works with stock `xpad` if you need a pad before
+xpadneo is installed.
 
 ```bash
 jstest /dev/input/js1    # sudo apt install joystick; pick the jsN that is Xbox, not fake-mouse
