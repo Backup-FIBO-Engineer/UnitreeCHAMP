@@ -26,13 +26,30 @@ connect AA:BB:CC:DD:EE:FF
 quit
 ```
 
-On Ubuntu the stock `xpad` driver is often enough. If the pad connects but
-`/dev/input/js0` never appears, install [xpadneo](https://github.com/atar-axis/xpadneo)
-(the usual fix for 1708 over Bluetooth).
+`bluetoothctl info` `Connected: yes` is not enough. Stock `xpad` is USB.
+Model 1708 over Bluetooth is HID (`Modalias: usb:v045Ep02FD...`) until
+[xpadneo](https://github.com/atar-axis/xpadneo) creates a real joystick.
+Without it, `joy_enumerate_devices` often lists only RustDesk.
+
+```bash
+# Xbox should show Handlers=... jsN  (not only eventN)
+grep -A25 -iE 'xbox|microsoft|045e|rustdesk' /proc/bus/input/devices
+ls -l /dev/input/js* /dev/input/by-id
+```
+
+If there is no Xbox `js` node:
+
+```bash
+sudo apt install dkms git linux-headers-$(uname -r)
+git clone https://github.com/atar-axis/xpadneo.git
+cd xpadneo && sudo ./install.sh
+# reconnect the pad (or reboot), then:
+ros2 run joy joy_enumerate_devices   # need a line named Xbox
+```
 
 ```bash
 ls /dev/input/js*
-jstest /dev/input/js0    # sudo apt install joystick
+jstest /dev/input/js0    # sudo apt install joystick; must move with the Xbox
 ```
 
 You need to be in the `input` group: `sudo gpasswd -a $USER input` then log out

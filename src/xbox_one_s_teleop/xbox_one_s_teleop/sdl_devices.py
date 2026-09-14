@@ -66,8 +66,9 @@ def missing_pad_error(devices: Sequence[Device]) -> str:
         f'Currently listed: {listed}. '
         '/dev/input/js0 is not the SDL index — RustDesk UInput Keyboard often '
         'appears as the only gamepad. Connect the 1708 over Bluetooth until '
-        'ros2 run joy joy_enumerate_devices shows a line named Xbox, or install '
-        'xpadneo. Closing RustDesk can also reveal the real pad.'
+        'ros2 run joy joy_enumerate_devices shows a line named Xbox. '
+        'bluetoothctl Connected: yes is not enough — 1708 Bluetooth needs xpadneo '
+        'to create a joystick. Closing RustDesk can also reveal the real pad.'
     )
 
 
