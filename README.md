@@ -143,7 +143,7 @@ Sport API.
 The same launch starts the IMU body roll/pitch loop for `go2` / `b2`
 (`body_pose_control:=auto|true|false`). By default it reads `/imu/data`, the
 `/lowstate` IMU republished by the bridge (~500 Hz); an external fused IMU
-works too, e.g. `imu_topic:=/dog_imu_raw_aligned` (best-effort or reliable
+works too, e.g. `imu_topic:=/dog_imu_raw` (best-effort or reliable
 publishers both match). The loop only starts once the bridge is on `/lowcmd`
 and the IMU is flowing; a body tilt beyond `body_pose.max_error` (not
 standing) or an IMU older than `imu_timeout_sec` releases the correction

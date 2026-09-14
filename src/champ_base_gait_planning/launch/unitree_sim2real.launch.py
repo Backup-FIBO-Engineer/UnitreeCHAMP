@@ -178,9 +178,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'imu_topic',
             default_value='imu/data',
-            description='sensor_msgs/Imu (fused orientation) read by the body pose loop: the '
-                        'bridge republishes /lowstate as /imu/data; an external driver '
-                        '(e.g. /dog_imu_raw_aligned) can be used instead',
+            description='sensor_msgs/Imu (fused orientation) for the body pose loop. Default '
+                        'imu/data is the bridge (/lowstate). Real B2 external IMU: '
+                        'imu_topic:=/dog_imu_raw',
         ),
         OpaqueFunction(function=launch_setup),
     ])

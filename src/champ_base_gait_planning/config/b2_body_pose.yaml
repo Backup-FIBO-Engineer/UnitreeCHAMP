@@ -4,8 +4,10 @@
 # the launch alongside this file. Angles in rad, rates in rad/s.
 /**:
   ros__parameters:
-    # sensor_msgs/Imu with a fused orientation: /imu/data from unitree_ros2_bridge
-    # (/lowstate imu_state) or mujoco_sim.py. Override per launch (imu_topic:=...).
+    # sensor_msgs/Imu with a fused orientation. Default /imu/data is the
+    # unitree_ros2_bridge (/lowstate) or mujoco_sim.py. On the real B2, pass
+    # imu_topic:=/dog_imu_raw to the Sim2Real launch (do not change this default:
+    # MuJoCo still publishes /imu/data).
     imu_topic: imu/data
     desired_pose_topic: body_pose
     command_pose_topic: body_pose/corrected

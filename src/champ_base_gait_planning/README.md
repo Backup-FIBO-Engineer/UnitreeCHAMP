@@ -153,7 +153,7 @@ when `config/<robot>_body_pose.yaml` exists (`body_pose_control:=auto`, the
 default; `true` requires the file, `false` sends `/body_pose` straight to
 CHAMP). `imu_topic:=<topic>` selects the `sensor_msgs/Imu` (fused
 orientation) it reads: the simulator's / bridge's `/imu/data` by default, or an
-external driver such as `/dog_imu_raw_aligned` (any QoS). MuJoCo can stand the
+external driver such as `/dog_imu_raw` (any QoS). MuJoCo can stand the
 robot on a slope to exercise it:
 
 ```bash
