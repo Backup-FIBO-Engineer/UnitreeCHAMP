@@ -13,10 +13,17 @@ CYCLONEDDS_URI for every node of this launch, exactly like unitree_ros2/setup.sh
 leave it empty when that setup.sh is already sourced. ROS_DOMAIN_ID is never set
 here: the robot lives on domain 0, so it must be 0 (or unset) in the shell.
 Sport/motion-control services must be off on the robot (the bridge calls ReleaseMode).
+
+With config/<robot>_body_pose.yaml present (body_pose_control:=auto, the default)
+the IMU body roll/pitch loop runs between the user's /body_pose and CHAMP:
+body_pose_controller_node reads the IMU (imu_topic, default /imu/data republished by
+the bridge from /lowstate; e.g. imu_topic:=/dog_imu_raw_aligned for an external
+driver) and publishes /body_pose/corrected, which quadruped_controller_node
+consumes as its body_pose.
 """
 
 from ament_index_python.packages import get_package_share_directory
-from champ_robot_files import available_robots, resolve_robot_files
+from champ_robot_files import available_robots, resolve_optional_feature, resolve_robot_files
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction, SetEnvironmentVariable
 from launch.substitutions import Command, LaunchConfiguration
@@ -40,6 +47,9 @@ def launch_setup(context):
         raise FileNotFoundError(
             f"robot '{files.robot}' has no config/{files.robot}_lowcmd.yaml (unitree_ros2_bridge "
             'gains, motor_mode, contact threshold); it cannot be driven over /lowcmd')
+    body_pose_control = resolve_optional_feature(
+        files, LaunchConfiguration('body_pose_control').perform(context), 'body_pose_control',
+        files.body_pose_yaml, f'config/{files.robot}_body_pose.yaml (IMU body roll/pitch loop)')
     robot_description = ParameterValue(
         Command([files.urdf_command, ' ', str(files.urdf)]), value_type=str)
 
@@ -49,6 +59,37 @@ def launch_setup(context):
         str(files.joints_yaml),
         str(files.links_yaml),
     ]
+
+    controller_remappings = [
+        ('joint_states', LaunchConfiguration('command_topic')),
+        ('foot_contacts', 'foot_contacts/planned'),
+    ]
+    body_pose_actions = []
+    if body_pose_control:
+        # The user's /body_pose goes through the IMU loop first.
+        controller_remappings.append(('body_pose', 'body_pose/corrected'))
+        body_pose_actions += [
+            LogInfo(msg=[
+                f'{files.robot}: IMU body roll/pitch loop on (config/{files.robot}_body_pose.yaml); '
+                '/body_pose -> body_pose_controller_node -> /body_pose/corrected -> CHAMP',
+            ]),
+            Node(
+                package='champ_base_gait_planning',
+                executable='body_pose_controller_node',
+                name='body_pose_controller_node',
+                output='screen',
+                parameters=common_params + [
+                    str(files.body_pose_yaml),
+                    {'imu_topic': LaunchConfiguration('imu_topic')},
+                    {'desired_pose_topic': 'body_pose'},
+                    {'command_pose_topic': 'body_pose/corrected'},
+                ],
+            ),
+        ]
+    else:
+        body_pose_actions.append(LogInfo(msg=[
+            f'{files.robot}: IMU body roll/pitch loop off; /body_pose goes straight to CHAMP',
+        ]))
 
     actions = []
     network_interface = LaunchConfiguration('network_interface').perform(context).strip()
@@ -64,7 +105,7 @@ def launch_setup(context):
             '(source unitree_ros2/setup.sh)',
         ]))
 
-    return actions + [
+    return actions + body_pose_actions + [
         LogInfo(msg=[
             f'{files.robot} Sim2Real: /lowcmd + /lowstate via unitree_ros2. Sport must stay off.',
         ]),
@@ -80,10 +121,7 @@ def launch_setup(context):
                 {'gazebo': False},
                 {'loop_rate': 200.0},
             ],
-            remappings=[
-                ('joint_states', LaunchConfiguration('command_topic')),
-                ('foot_contacts', 'foot_contacts/planned'),
-            ],
+            remappings=controller_remappings,
         ),
         Node(
             package='champ_base_gait_planning',
@@ -130,6 +168,19 @@ def generate_launch_description():
             'command_topic',
             default_value='joint_commands',
             description='CHAMP planned joints consumed by unitree_ros2_bridge',
+        ),
+        DeclareLaunchArgument(
+            'body_pose_control',
+            default_value='auto',
+            description='IMU body roll/pitch loop (body_pose_controller_node): auto = when '
+                        'config/<robot>_body_pose.yaml exists, true, false',
+        ),
+        DeclareLaunchArgument(
+            'imu_topic',
+            default_value='imu/data',
+            description='sensor_msgs/Imu (fused orientation) for the body pose loop. Default '
+                        'imu/data is the bridge (/lowstate). Real B2 external IMU: '
+                        'imu_topic:=/dog_imu_raw',
         ),
         OpaqueFunction(function=launch_setup),
     ])

@@ -53,6 +53,15 @@ add_executable(state_estimation_node src/state_estimation_node.cpp)
 target_link_libraries(state_estimation_node state_estimation)
 ament_target_dependencies(state_estimation_node ${dependencies})
 
+# IMU-closed body roll/pitch between the user's body_pose and CHAMP
+# (include/body_orientation_controller.h is the ROS-free loop, also verified
+# offline by tools/verify_body_pose_controller.cpp).
+add_library(body_pose_controller SHARED src/body_pose_controller.cpp)
+ament_target_dependencies(body_pose_controller rclcpp geometry_msgs sensor_msgs urdf)
+add_executable(body_pose_controller_node src/body_pose_controller_node.cpp)
+target_link_libraries(body_pose_controller_node body_pose_controller)
+ament_target_dependencies(body_pose_controller_node rclcpp geometry_msgs sensor_msgs urdf)
+
 # ---------------------------------------------------------------------------
 # unitree_ros2_bridge: any Unitree quadruped speaking unitree_go LowCmd/LowState
 # on /lowcmd + /lowstate through unitree_ros2 (same ROS 2 / CycloneDDS graph as
@@ -85,6 +94,7 @@ endif()
 install(TARGETS
   quadruped_controller
   state_estimation
+  body_pose_controller
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
 )
@@ -92,6 +102,7 @@ install(TARGETS
 set(EXEC_TARGETS
   quadruped_controller_node
   state_estimation_node
+  body_pose_controller_node
 )
 if(UNITREE_ROS2_BRIDGE_BUILT)
   list(APPEND EXEC_TARGETS unitree_ros2_bridge)
@@ -152,6 +163,14 @@ if(BUILD_TESTING)
   target_link_libraries(verify_unitree_lowcmd ${CHAMP_YAML_CPP_TARGET})
   ament_target_dependencies(verify_unitree_lowcmd urdfdom)
 
+  add_executable(verify_body_pose_controller tools/verify_body_pose_controller.cpp)
+  target_include_directories(verify_body_pose_controller PRIVATE include ${CHAMP_TOOL_INCLUDES})
+  target_link_libraries(verify_body_pose_controller ${CHAMP_YAML_CPP_TARGET} tinyxml2::tinyxml2)
+
+  add_executable(measure_gait_continuity tools/measure_gait_continuity.cpp)
+  target_include_directories(measure_gait_continuity PRIVATE include ${CHAMP_TOOL_INCLUDES})
+  target_link_libraries(measure_gait_continuity ${CHAMP_YAML_CPP_TARGET} tinyxml2::tinyxml2)
+
   set(TOOLS ${CMAKE_CURRENT_SOURCE_DIR}/tools)
   file(GLOB ROBOT_DESCRIPTIONS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/urdf
     ${CMAKE_CURRENT_SOURCE_DIR}/urdf/*.urdf
@@ -192,6 +211,15 @@ if(BUILD_TESTING)
       add_test(NAME verify_unitree_lowcmd_${robot}
         COMMAND verify_unitree_lowcmd ${robot_urdf} ${config}/${robot}_joints.yaml)
     endif()
+    if(EXISTS ${config}/${robot}_body_pose.yaml)
+      add_test(NAME verify_body_pose_controller_${robot}
+        COMMAND verify_body_pose_controller ${robot_urdf}
+          ${config}/${robot}_gait.yaml ${config}/${robot}_joints.yaml ${config}/${robot}_links.yaml
+          ${config}/${robot}_body_pose.yaml)
+    endif()
+    add_test(NAME measure_gait_continuity_${robot}
+      COMMAND measure_gait_continuity ${robot_urdf}
+        ${config}/${robot}_gait.yaml ${config}/${robot}_joints.yaml ${config}/${robot}_links.yaml)
   endforeach()
   if(EXPANDED_URDFS)
     add_custom_target(expand_robot_urdfs ALL DEPENDS ${EXPANDED_URDFS})

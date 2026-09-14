@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>xbox_one_s_teleop</name>
+  <version>0.1.0</version>
+  <description>
+    Xbox One S Wireless Controller (Model 1708) Bluetooth teleop for CHAMP:
+    locomotion /cmd_vel (vx, vy, yaw) and a toggleable body-pose mode (roll, pitch)
+    plus a reset-to-level button. Axis/button indices and speed/angle limits are
+    parameters (yaml); nothing robot-specific is hardcoded.
+  </description>
+  <maintainer email="fibo@todo.todo">fibo</maintainer>
+  <license>BSD</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>champ_base_gait_planning</exec_depend>
+  <exec_depend>joy</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

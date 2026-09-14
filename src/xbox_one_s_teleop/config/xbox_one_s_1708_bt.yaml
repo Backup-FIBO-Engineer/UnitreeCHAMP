@@ -1,0 +1,54 @@
+# Xbox One S Wireless Controller, Model 1708, Bluetooth.
+#
+# Default indices are SDL2, which is what ROS 2 Humble/Jazzy `joy_node`
+# (package `joy`) publishes on /joy. Stick-up is a negative axis value.
+#
+#   axis 0 left X   axis 1 left Y   axis 2 right X   axis 3 right Y
+#   axis 4 LT       axis 5 RT
+#
+# If you launched `joy_linux_node` instead (kernel js / jstest order), use
+# config/xbox_one_s_1708_bt_linuxjs.yaml (launch driver:=linux).
+#
+#   LB (4)  toggle locomotion ↔ body pose
+#   RB (5)  hold to send /cmd_vel (released = stop)
+#   A  (0)  reset /body_pose to level (identity quaternion)
+#   B  (1)  zero /cmd_vel immediately
+#
+# Locomotion: left stick X/Y = vy / vx (simultaneous), right stick X = yaw.
+# Body pose:  right stick X/Y = body roll / pitch rates (simultaneous).
+# invert_vy/yaw true: stick right → robot right / turn right (ROS +y left, +yaw CCW).
+# invert_roll false: stick right → +roll (right side down). invert_pitch false:
+# stick up (negative Y) → nose up (−pitch).
+#
+# Speed and angle limits are overwritten by teleop.launch.py from
+# champ_base_gait_planning config/<robot>_{gait,body_pose}.yaml when robot:= is set.
+/**:
+  ros__parameters:
+    joy_topic: joy
+    cmd_vel_topic: cmd_vel
+    body_pose_topic: body_pose
+    publish_rate: 20.0
+    joy_timeout_sec: 0.5
+    deadzone: 0.15
+    axis_vx: 1
+    axis_vy: 0
+    axis_yaw: 2
+    axis_roll: 2
+    axis_pitch: 3
+    invert_vx: true
+    invert_vy: true
+    invert_yaw: true
+    invert_roll: false
+    invert_pitch: false
+    button_mode: 4
+    button_deadman: 5
+    button_reset: 0
+    button_stop: 1
+    # Used only when launch is not given robot:= (no gait / body_pose overlay).
+    max_linear_x: 0.5
+    max_linear_y: 0.15
+    max_angular_z: 0.6
+    max_roll: 0.25
+    max_pitch: 0.20
+    roll_rate: 0.4
+    pitch_rate: 0.4

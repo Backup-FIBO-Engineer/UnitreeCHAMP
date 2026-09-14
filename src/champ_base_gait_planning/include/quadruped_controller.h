@@ -20,6 +20,7 @@
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -36,14 +37,19 @@ private:
   rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr joint_commands_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_publisher_;
   rclcpp::Publisher<champ_msgs::msg::ContactsStamped>::SharedPtr foot_contacts_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr applied_cmd_vel_publisher_;
 
   rclcpp::TimerBase::SharedPtr loop_timer_;
   rclcpp::Clock clock_;
 
   champ::Velocities req_vel_;
+  champ::Velocities cmd_vel_target_;
   champ::Pose req_pose_;
 
   champ::GaitConfig gait_config_;
+  double max_linear_acceleration_{0.0};
+  double max_angular_acceleration_{0.0};
+  double loop_dt_{0.005};
 
   champ::QuadrupedBase base_;
   champ::BodyController body_controller_;
@@ -59,8 +65,11 @@ private:
   bool in_gazebo_{false};
   bool has_last_joints_{false};
   float last_joint_positions_[12]{};
+  bool leg_in_stance_[4]{true, true, true, true};
+  bool touchdown_tick_{false};
 
   void controlLoop_();
+  void slewReqVel_();
   void publishJoints_(float target_joints[12]);
   void publishFootContacts_();
   void cmdVelCallback_(const geometry_msgs::msg::Twist::SharedPtr msg);

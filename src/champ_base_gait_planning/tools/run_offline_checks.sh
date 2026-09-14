@@ -4,11 +4,13 @@
 #
 #   bash tools/run_offline_checks.sh            # all robots in urdf/
 #   bash tools/run_offline_checks.sh go2 b2     # selected robots
+#   bash tools/run_offline_checks.sh --no-mujoco b2
 #
 # A robot is urdf/<robot>.urdf|.xacro + config/<robot>_{gait,joints,links}.yaml.
-# MuJoCo checks run when mujoco/<robot>.xml exists, the LowCmd check when
-# config/<robot>_lowcmd.yaml exists. Needs python3 (numpy, PyYAML, mujoco),
-# g++, pkg-config, tinyxml2 and yaml-cpp dev packages. verify_unitree_lowcmd
+# MuJoCo checks run when mujoco/<robot>.xml exists (unless --no-mujoco), the
+# LowCmd check when config/<robot>_lowcmd.yaml exists, the IMU body pose loop
+# check when config/<robot>_body_pose.yaml exists. Needs python3 (numpy, PyYAML,
+# mujoco unless --no-mujoco), g++, pkg-config, tinyxml2 and yaml-cpp. verify_unitree_lowcmd
 # also needs urdfdom (found through pkg-config or a sourced ROS 2 prefix) and
 # is skipped with a warning otherwise.
 set -euo pipefail
@@ -20,9 +22,19 @@ BUILD_DIR="${CHAMP_OFFLINE_BUILD_DIR:-/tmp/champ_offline_checks}"
 mkdir -p "${BUILD_DIR}"
 cd "${ROOT}"
 
-if [ $# -gt 0 ]; then
-  ROBOTS=("$@")
-else
+NO_MUJOCO=0
+ROBOTS=()
+for arg in "$@"; do
+  case "${arg}" in
+    --no-mujoco) NO_MUJOCO=1 ;;
+    -h|--help)
+      sed -n '2,16p' "$0"
+      exit 0
+      ;;
+    *) ROBOTS+=("${arg}") ;;
+  esac
+done
+if [ ${#ROBOTS[@]} -eq 0 ]; then
   mapfile -t ROBOTS < <(python3 "${TOOLS}/champ_robot_files.py" list "${ROOT}")
 fi
 if [ ${#ROBOTS[@]} -eq 0 ]; then
@@ -41,6 +53,12 @@ g++ "${CXXFLAGS_COMMON[@]}" "${XML_YAML_CFLAGS[@]}" \
   -o "${BUILD_DIR}/verify_champ_robot" tools/verify_champ_robot.cpp "${XML_YAML_LIBS[@]}"
 g++ "${CXXFLAGS_COMMON[@]}" "${XML_YAML_CFLAGS[@]}" \
   -o "${BUILD_DIR}/dump_champ_gait" tools/dump_champ_gait.cpp "${XML_YAML_LIBS[@]}"
+g++ "${CXXFLAGS_COMMON[@]}" -I include "${XML_YAML_CFLAGS[@]}" \
+  -o "${BUILD_DIR}/verify_body_pose_controller" tools/verify_body_pose_controller.cpp \
+  "${XML_YAML_LIBS[@]}"
+g++ "${CXXFLAGS_COMMON[@]}" -I include "${XML_YAML_CFLAGS[@]}" \
+  -o "${BUILD_DIR}/measure_gait_continuity" tools/measure_gait_continuity.cpp \
+  "${XML_YAML_LIBS[@]}"
 
 LOWCMD_BIN=""
 URDFDOM_CFLAGS=()
@@ -88,13 +106,18 @@ for robot in "${ROBOTS[@]}"; do
   step "${robot}: CHAMP IK/FK/gait/odometry"
   "${BUILD_DIR}/verify_champ_robot" "${urdf}" "${gait}" "${joints}" "${links}"
 
-  if [ -f "mujoco/${robot}.xml" ]; then
+  step "${robot}: gait continuity (phase reset, C1 swing, stop gate)"
+  "${BUILD_DIR}/measure_gait_continuity" "${urdf}" "${gait}" "${joints}" "${links}"
+
+  if [ "${NO_MUJOCO}" -eq 0 ] && [ -f "mujoco/${robot}.xml" ]; then
     step "${robot}: MuJoCo model vs URDF"
     python3 tools/validate_mujoco_against_urdf.py --robot "${robot}"
     step "${robot}: MuJoCo standing physics"
     python3 tools/verify_mujoco_physics.py --robot "${robot}"
     step "${robot}: MuJoCo forward walk"
     python3 tools/verify_mujoco_walk.py --robot "${robot}"
+  elif [ "${NO_MUJOCO}" -eq 1 ]; then
+    echo "[INFO] ${robot}: MuJoCo checks skipped (--no-mujoco)"
   else
     echo "[INFO] ${robot}: no mujoco/${robot}.xml, MuJoCo checks skipped"
   fi
@@ -106,6 +129,12 @@ for robot in "${ROBOTS[@]}"; do
     else
       echo "[WARN] ${robot}: verify_unitree_lowcmd skipped (urdfdom missing)"
     fi
+  fi
+
+  if [ -f "config/${robot}_body_pose.yaml" ]; then
+    step "${robot}: IMU body roll/pitch loop"
+    "${BUILD_DIR}/verify_body_pose_controller" "${urdf}" "${gait}" "${joints}" "${links}" \
+      "config/${robot}_body_pose.yaml"
   fi
 done
 

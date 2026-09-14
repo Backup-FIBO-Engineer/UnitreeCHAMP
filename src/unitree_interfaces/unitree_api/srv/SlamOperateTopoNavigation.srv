@@ -1,0 +1,6 @@
+int32 node_id
+string topo_type
+string topo_name
+---
+bool success
+string message

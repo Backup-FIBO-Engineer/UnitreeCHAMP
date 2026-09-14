@@ -83,6 +83,31 @@ namespace champ
                         control_points_x_[i] = ref_control_points_x_[i] * length_ratio_;   
                 }
             }
+            matchStanceSwingVelocity(step_length);
+        }
+
+        // Stance x-velocity is -L/Ts. A degree-n Bezier has endpoint
+        // velocities n*(P1-P0)/Tw and n*(Pn-P{n-1})/Tw. Set P1 and P{n-1}
+        // so those match for a constant twist (C1 in x at the contacts).
+        void matchStanceSwingVelocity(float step_length)
+        {
+            const float ts = leg_->gait_config->stance_duration;
+            float tw = leg_->gait_config->swing_duration;
+            if(!(tw > 0.0f))
+            {
+                tw = 0.25f;
+            }
+            if(!(ts > 0.0f) || !(step_length > 0.0f))
+            {
+                return;
+            }
+            const int n = static_cast<int>(total_control_points_) - 1;
+            const float half = step_length / 2.0f;
+            const float d = step_length * tw / (static_cast<float>(n) * ts);
+            control_points_x_[0] = -half;
+            control_points_x_[static_cast<unsigned>(n)] = half;
+            control_points_x_[1] = -half - d;
+            control_points_x_[static_cast<unsigned>(n - 1)] = half + d;
         }
 
         public:

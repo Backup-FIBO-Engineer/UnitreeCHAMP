@@ -238,7 +238,10 @@ struct GaitParams
   double swing_height{0.0};
   double stance_depth{0.0};
   double stance_duration{0.25};
+  double swing_duration{0.25};
   double nominal_height{0.0};
+  double max_linear_acceleration{0.0};
+  double max_angular_acceleration{0.0};
 };
 
 inline GaitParams loadGait(const YAML::Node & params)
@@ -267,7 +270,16 @@ inline GaitParams loadGait(const YAML::Node & params)
   get("swing_height", g.swing_height);
   get("stance_depth", g.stance_depth);
   get("stance_duration", g.stance_duration);
+  if (gait["swing_duration"]) {
+    g.swing_duration = gait["swing_duration"].as<double>();
+  }
   get("nominal_height", g.nominal_height);
+  if (gait["max_linear_acceleration"]) {
+    g.max_linear_acceleration = gait["max_linear_acceleration"].as<double>();
+  }
+  if (gait["max_angular_acceleration"]) {
+    g.max_angular_acceleration = gait["max_angular_acceleration"].as<double>();
+  }
   return g;
 }
 
@@ -307,6 +319,7 @@ struct RobotConfig
     g.swing_height = static_cast<float>(gait.swing_height);
     g.stance_depth = static_cast<float>(gait.stance_depth);
     g.stance_duration = static_cast<float>(gait.stance_duration);
+    g.swing_duration = static_cast<float>(gait.swing_duration);
     g.nominal_height = static_cast<float>(gait.nominal_height);
     return g;
   }

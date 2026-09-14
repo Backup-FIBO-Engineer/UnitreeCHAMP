@@ -31,8 +31,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <macros/macros.h>
 #include <quadruped_base/quadruped_base.h>
 
+#include <cmath>
+
 namespace champ
 {
+    // Trot phase clock. LF/RH (legs 0, 3) share one clock, RF/LH (legs 1, 2)
+    // run half a stride behind. Each leg spends stance_duration in stance and
+    // then swing_phase_period in swing; the two periods need not be equal
+    // (unequal periods give a short four-leg support window per stride).
     class PhaseGenerator
     {
         public:
@@ -44,13 +50,10 @@ namespace champ
 
             Time last_touchdown_;
 
-            bool has_swung_;
-
         public:
             PhaseGenerator(champ::QuadrupedBase &base, Time time = now()):
                 base_(&base),
                 last_touchdown_(time),
-                has_swung_(false),
                 has_started(false),
                 stance_phase_signal{0.0f,0.0f,0.0f,0.0f},
                 swing_phase_signal{0.0f,0.0f,0.0f,0.0f}
@@ -59,20 +62,20 @@ namespace champ
 
             void run(float target_velocity, float /*step_length*/, Time time = now())
             {
-                unsigned long elapsed_time_ref = 0;
-                float swing_phase_period = 0.25f * SECONDS_TO_MICROS;
-                float leg_clocks[4] = {0.0f,0.0f,0.0f,0.0f};
-                float stance_phase_period =  base_->gait_config.stance_duration * SECONDS_TO_MICROS;
-                float stride_period = stance_phase_period + swing_phase_period;
+                float swing_phase_period = base_->gait_config.swing_duration * SECONDS_TO_MICROS;
+                if(!(swing_phase_period > 0.0f))
+                {
+                    swing_phase_period = 0.25f * SECONDS_TO_MICROS;
+                }
+                const float stance_phase_period =  base_->gait_config.stance_duration * SECONDS_TO_MICROS;
+                const float stride_period = stance_phase_period + swing_phase_period;
 
                 if(target_velocity == 0.0f)
                 {
-                    elapsed_time_ref = 0;
+                    has_started = false;
                     last_touchdown_ = 0;
-                    has_swung_ = false;
                     for(unsigned int i = 0; i < 4; i++)
                     {
-                        leg_clocks[i] = 0.0f;
                         stance_phase_signal[i] = 0.0f;
                         swing_phase_signal[i] = 0.0f;  
                     }
@@ -82,50 +85,58 @@ namespace champ
                 if(!has_started)
                 {
                     has_started = true;
-                    last_touchdown_ = time;
+                    // Begin the stride at the instant RF/LH leave stance, so every
+                    // foot is on the ground and the first swing rises from z = 0
+                    // (a clock started at 0 would drop RF/LH into the middle of a
+                    // swing, i.e. a full swing_height step in one tick). The stance
+                    // feet then sit a fraction of a step length from neutral, which
+                    // is small whenever the caller ramps the velocity up from zero.
+                    const Time start_offset = static_cast<Time>(
+                        fmodf(stance_phase_period + 0.5f * stride_period, stride_period));
+                    last_touchdown_ = time - start_offset;
                 }
 
-                if((time - last_touchdown_) >= stride_period)
+                // Advance by whole strides only, so the start_offset remainder
+                // is kept. Assigning last_touchdown_ = time would skip that
+                // remainder on the first wrap (~25 ms of phase, a foot pop).
+                const Time stride_period_t = static_cast<Time>(stride_period);
+                if(stride_period_t > 0)
                 {
-                    last_touchdown_ = time;
+                    const Time elapsed = time - last_touchdown_;
+                    if(elapsed >= stride_period_t)
+                    {
+                        last_touchdown_ += (elapsed / stride_period_t) * stride_period_t;
+                    }
                 }
+                const float elapsed_time_ref = static_cast<float>(time - last_touchdown_);
 
-                if(elapsed_time_ref >= stride_period)
-                    elapsed_time_ref = stride_period;
-                else
-                    elapsed_time_ref = time - last_touchdown_;
-
-                leg_clocks[0] = elapsed_time_ref - (0.0f * stride_period);
-                leg_clocks[1] = elapsed_time_ref - (0.5f * stride_period);
-                leg_clocks[2] = elapsed_time_ref - (0.5f * stride_period);
-                leg_clocks[3] = elapsed_time_ref - (0.0f * stride_period);
-
+                const float leg_offsets[4] = {0.0f, 0.5f, 0.5f, 0.0f};
                 for(int i = 0; i < 4; i++)
                 {
-                    if(leg_clocks[i] > 0 and leg_clocks[i] < stance_phase_period)
-                        stance_phase_signal[i] = leg_clocks[i] / stance_phase_period;
-                    else
-                        stance_phase_signal[i] = 0;
+                    // Every leg clock is wrapped into [0, stride): stance first,
+                    // then swing. Letting the half-stride legs run negative instead
+                    // would cut their stance short whenever stance_duration differs
+                    // from the swing period (the foot then jumps into the swing).
+                    float leg_clock = elapsed_time_ref - leg_offsets[i] * stride_period;
+                    if(leg_clock < 0.0f)
+                        leg_clock += stride_period;
 
-                    if(leg_clocks[i] > -swing_phase_period && leg_clocks[i] < 0)
-                        swing_phase_signal[i] = (leg_clocks[i] + swing_phase_period) / swing_phase_period;
-                    else if(leg_clocks[i] > stance_phase_period && leg_clocks[i] < stride_period)
-                        swing_phase_signal[i] = (leg_clocks[i] - stance_phase_period) / swing_phase_period;
+                    if(leg_clock >= 0.0f && leg_clock < stance_phase_period)
+                    {
+                        stance_phase_signal[i] = leg_clock / stance_phase_period;
+                        swing_phase_signal[i] = 0.0f;
+                    }
+                    else if(leg_clock >= stance_phase_period && leg_clock < stride_period)
+                    {
+                        stance_phase_signal[i] = 0.0f;
+                        swing_phase_signal[i] = (leg_clock - stance_phase_period) / swing_phase_period;
+                    }
                     else
-                        swing_phase_signal[i] = 0;
+                    {
+                        stance_phase_signal[i] = 0.0f;
+                        swing_phase_signal[i] = 0.0f;
+                    }
                 }
-
-                if(!has_swung_ && stance_phase_signal[0] < 0.5)
-                {
-                    stance_phase_signal[0] = 0.0;
-                    stance_phase_signal[3] = 0.0;
-                    swing_phase_signal[1] = 0.0;
-                    swing_phase_signal[2] = 0.0;
-                }
-                else
-                {
-                    has_swung_ = true;
-                }  
             }
 
             bool has_started;

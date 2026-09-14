@@ -1,0 +1,40 @@
+# Xbox One S 1708 Bluetooth via xpadneo + ROS 2 joy_node (SDL2).
+#
+# xpadneo spoofs PID 0x028E ("Xbox 360 Controller") and uses Linux gamepad
+# axis order: LT/RT occupy 2 and 5, so the right stick is 3 and 4.
+# SDL2 /joy signs on this path: stick up and stick left are positive
+# (not classic jstest). invert_* below undo that so:
+#   stick up    → +vx (forward) / nose up (−pitch)
+#   stick left  → +yaw (turn left) / strafe left if left stick
+#   stick right → robot right (−vy) / +roll (right side down)
+#
+# Launch driver:=linux or driver:=auto when the pad is listed as Xbox 360.
+/**:
+  ros__parameters:
+    joy_topic: joy
+    cmd_vel_topic: cmd_vel
+    body_pose_topic: body_pose
+    publish_rate: 20.0
+    joy_timeout_sec: 0.5
+    deadzone: 0.15
+    axis_vx: 1
+    axis_vy: 0
+    axis_yaw: 3
+    axis_roll: 3
+    axis_pitch: 4
+    invert_vx: false
+    invert_vy: false
+    invert_yaw: false
+    invert_roll: true
+    invert_pitch: true
+    button_mode: 4
+    button_deadman: 5
+    button_reset: 0
+    button_stop: 1
+    max_linear_x: 0.5
+    max_linear_y: 0.15
+    max_angular_z: 0.6
+    max_roll: 0.25
+    max_pitch: 0.20
+    roll_rate: 0.4
+    pitch_rate: 0.4
