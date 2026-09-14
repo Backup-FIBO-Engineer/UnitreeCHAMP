@@ -1,0 +1,18 @@
+# MuJoCo settings for B2. Geometry, inertials, joint limits, efforts and
+# velocity limits live in urdf/b2.urdf and mujoco/b2.xml; this file only
+# holds simulator tuning.
+/**:
+  ros__parameters:
+    sim:
+      # Position-actuator gains. unitree_ros2 b2_stand_example drives the real
+      # B2 with Kp 1000 / Kd 10; hip abduction gets half of that.
+      actuator_kp_hip: 500.0
+      actuator_kp_leg: 1000.0
+      actuator_kv: 20.0
+      joint_damping: 0.5
+      joint_armature: 0.01
+      joint_frictionloss: 0.05
+      geom_friction: [1.2, 0.005, 0.0001]
+      spawn_clearance: 0.02
+      # <= 0: rate-limit joint targets with the URDF <limit velocity> of each joint.
+      max_joint_velocity: 0.0

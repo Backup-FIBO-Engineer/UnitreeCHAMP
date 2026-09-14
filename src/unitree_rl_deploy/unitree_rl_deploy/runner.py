@@ -1,7 +1,6 @@
 """ROS 2 node: IMU + joints + /cmd_vel → policy → joint_commands.
 
-CHAMP is not in this loop. joint_commands is the same topic MuJoCo and
-unitree_ros2_bridge already consume.
+joint_commands is the topic MuJoCo and unitree_ros2_bridge consume.
 """
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage: ./run_teleop.sh
-# Publishes /cmd_vel. Keep this in its own terminal; body_pose commands go in
-# another shell that has also sourced ROS + install/setup.bash.
+# Publishes /cmd_vel. Keep this in its own terminal so it does not fight
+# xbox teleop or other Twist publishers.
 set -e
 cd "$(dirname "$0")"
 

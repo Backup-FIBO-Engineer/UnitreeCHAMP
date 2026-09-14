@@ -1,0 +1,26 @@
+# unitree_ros2_bridge parameters for B2. Joint names, joint limits and the
+# base/IMU frames come from urdf/b2.urdf + b2_joints.yaml + b2_links.yaml,
+# which the launch passes alongside this file.
+/**:
+  ros__parameters:
+    # unitree_ros2 topics of the robot (ROS 2 /lowcmd == DDS rt/lowcmd).
+    lowcmd_topic: /lowcmd
+    lowstate_topic: /lowstate
+    # Policy runner topics.
+    command_topic: joint_commands
+    joint_state_topic: joint_states
+    imu_topic: imu/data
+    publish_rate: 500.0
+    # unitree_ros2 example/src/src/b2/b2_stand_example.cpp: Kp 1000, Kd 10, mode 0x0A.
+    # B2 weighs ~70 kg (URDF); Go2-level gains (60/5) cannot hold it up.
+    kp: 1000.0
+    kd: 10.0
+    tau: 0.0
+    motor_mode: 10  # 0x0A PMSM servo
+    command_timeout_sec: 0.5
+    ramp_sec: 3.0
+    # Policy targets arrive at control_rate (50 Hz); interpolate at publish_rate
+    # instead of repeating each one (a staircase is a torque tick at kp 1000).
+    interpolate_commands: true
+    # motion_switcher ReleaseMode over /api/motion_switcher/{request,response}.
+    release_sport: true

@@ -3,30 +3,37 @@
   <name>unitree_rl_deploy</name>
   <version>0.1.0</version>
   <description>
-    Deploy a trained locomotion policy on Unitree quadrupeds. Observation and
-    action layout come from config/&lt;robot&gt;_rl.yaml. MuJoCo and /lowcmd
-    hardware use champ_base_gait_planning (no CHAMP gait, no RL training).
+    Deploy a trained Go2/B2 locomotion policy in MuJoCo and on the real robot
+    over unitree_ros2 (/lowcmd, /lowstate). Policy deploy only; no RL training.
   </description>
   <maintainer email="fibo@todo.todo">fibo</maintainer>
   <license>BSD</license>
 
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>rclcpp</depend>
   <depend>rclpy</depend>
-  <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>std_msgs</depend>
-  <depend>champ_base_gait_planning</depend>
+  <depend>nav_msgs</depend>
+  <depend>urdf</depend>
+  <depend>unitree_go</depend>
+  <depend>unitree_api</depend>
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>rmw_cyclonedds_cpp</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
-  <exec_depend>rmw_cyclonedds_cpp</exec_depend>
 
+  <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>python3-pytest</test_depend>
 
   <export>
-    <build_type>ament_python</build_type>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>

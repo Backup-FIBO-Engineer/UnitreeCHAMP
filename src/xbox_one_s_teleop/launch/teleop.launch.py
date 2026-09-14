@@ -2,12 +2,11 @@
 
     ros2 launch xbox_one_s_teleop teleop.launch.py robot:=go2
     ros2 launch xbox_one_s_teleop teleop.launch.py robot:=b2
-    ros2 launch xbox_one_s_teleop teleop.launch.py robot:=xgo
 
-robot:= loads gait + body_pose yaml from champ_base_gait_planning so stick
-full-scale matches that robot's max vx/vy/wz and max roll/pitch. Mapping of
-the pad itself is yaml: SDL axes 0/1/2/3, or Linux/xpadneo 0/1/3/4 when the
-pad is listed as Xbox 360 (`driver:=auto`). No robot numbers in the pad yaml.
+robot:= loads max_cmd from unitree_rl_deploy config/<robot>_rl.yaml so stick
+full-scale matches that policy's command clamp. Mapping of the pad itself is
+yaml: SDL axes 0/1/2/3, or Linux/xpadneo 0/1/3/4 when the pad is listed as
+Xbox 360 (`driver:=auto`). No robot numbers in the pad yaml.
 """
 from pathlib import Path
 
@@ -34,29 +33,18 @@ def _robot_limits(robot: str) -> dict:
     if not robot:
         return {}
     try:
-        champ = Path(get_package_share_directory('champ_base_gait_planning'))
+        pkg = Path(get_package_share_directory('unitree_rl_deploy'))
     except PackageNotFoundError:
         return {}
     overlay = {}
-    gait_path = champ / 'config' / f'{robot}_gait.yaml'
-    if gait_path.is_file():
-        gait = _load_ros_params(gait_path).get('gait', {})
-        if 'max_linear_velocity_x' in gait:
-            overlay['max_linear_x'] = float(gait['max_linear_velocity_x'])
-        if 'max_linear_velocity_y' in gait:
-            overlay['max_linear_y'] = float(gait['max_linear_velocity_y'])
-        if 'max_angular_velocity_z' in gait:
-            overlay['max_angular_z'] = float(gait['max_angular_velocity_z'])
-    pose_path = champ / 'config' / f'{robot}_body_pose.yaml'
-    if pose_path.is_file():
-        body = _load_ros_params(pose_path).get('body_pose', {})
-        if 'max_roll' in body:
-            overlay['max_roll'] = float(body['max_roll'])
-        if 'max_pitch' in body:
-            overlay['max_pitch'] = float(body['max_pitch'])
-        if 'desired_rate' in body:
-            overlay['roll_rate'] = float(body['desired_rate'])
-            overlay['pitch_rate'] = float(body['desired_rate'])
+    rl_path = pkg / 'config' / f'{robot}_rl.yaml'
+    if rl_path.is_file():
+        params = _load_ros_params(rl_path)
+        max_cmd = params.get('max_cmd') or []
+        if len(max_cmd) >= 3:
+            overlay['max_linear_x'] = float(max_cmd[0])
+            overlay['max_linear_y'] = float(max_cmd[1])
+            overlay['max_angular_z'] = float(max_cmd[2])
     return overlay
 
 
@@ -120,7 +108,7 @@ def launch_setup(context):
         ]))
     elif robot:
         actions.append(LogInfo(msg=[
-            f"Xbox teleop: no gait/body_pose yaml for robot '{robot}', using pad yaml defaults",
+            f"Xbox teleop: no {robot}_rl.yaml max_cmd overlay, using pad yaml defaults",
         ]))
     actions += [
         Node(
@@ -146,7 +134,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'robot',
             default_value='go2',
-            description='CHAMP robot stem (go2, b2, xgo): overlays gait and body_pose limits',
+            description='Robot stem (go2, b2): overlays max_cmd from unitree_rl_deploy',
         ),
         DeclareLaunchArgument(
             'device_id',

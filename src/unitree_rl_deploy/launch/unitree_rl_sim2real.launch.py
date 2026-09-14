@@ -1,4 +1,4 @@
-"""Policy runner + unitree_ros2_bridge on a real Unitree quadruped (no CHAMP gait).
+"""Policy runner + unitree_ros2_bridge on a real Unitree quadruped.
 
     ros2 launch unitree_rl_deploy unitree_rl_sim2real.launch.py robot:=go2 \\
         network_interface:=eth0 policy:=/path/to/policy.pt
@@ -9,14 +9,13 @@
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
-from champ_robot_files import available_robots, resolve_robot_files
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction, SetEnvironmentVariable
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-from unitree_rl_deploy.config import load_ros_params
+from unitree_rl_deploy.robot_files import available_robots, load_ros_params, resolve_robot_files
 
 
 def cyclonedds_uri(network_interface: str) -> str:
@@ -27,30 +26,19 @@ def cyclonedds_uri(network_interface: str) -> str:
     )
 
 
-def _rl_robots(rl_share: Path) -> list:
-    return sorted(p.name[:-8] for p in (rl_share / 'config').glob('*_rl.yaml'))
-
-
 def launch_setup(context):
-    champ_share = Path(get_package_share_directory('champ_base_gait_planning'))
-    rl_share = Path(get_package_share_directory('unitree_rl_deploy'))
-    files = resolve_robot_files(champ_share, LaunchConfiguration('robot').perform(context))
-    rl_yaml = rl_share / 'config' / f'{files.robot}_rl.yaml'
-    if not rl_yaml.is_file():
-        raise FileNotFoundError(
-            f"robot '{files.robot}' has no unitree_rl_deploy/config/{files.robot}_rl.yaml. "
-            f'RL deploy robots: {", ".join(_rl_robots(rl_share)) or "none"}'
-        )
+    pkg = Path(get_package_share_directory('unitree_rl_deploy'))
+    files = resolve_robot_files(pkg, LaunchConfiguration('robot').perform(context))
     if files.lowcmd_yaml is None:
         raise FileNotFoundError(
             f"robot '{files.robot}' has no config/{files.robot}_lowcmd.yaml"
         )
     robot_description = ParameterValue(
         Command([files.urdf_command, ' ', str(files.urdf)]), value_type=str)
-    rl_params = load_ros_params(rl_yaml)
+    rl_params = load_ros_params(files.rl_yaml)
     policy = LaunchConfiguration('policy').perform(context).strip()
     runner_params = [
-        str(rl_yaml),
+        str(files.rl_yaml),
         {'imu_topic': LaunchConfiguration('imu_topic')},
     ]
     if policy:
@@ -85,7 +73,7 @@ def launch_setup(context):
     return actions + [
         LogInfo(msg=[
             f'{files.robot} Sim2Real RL: policy_runner -> joint_commands -> /lowcmd. '
-            'CHAMP gait is not running. Sport must stay off. Do not mix with the Sport API.'
+            'Sport must stay off. Do not mix with the Sport API.'
         ]),
         Node(
             package='unitree_rl_deploy',
@@ -95,7 +83,7 @@ def launch_setup(context):
             parameters=runner_params,
         ),
         Node(
-            package='champ_base_gait_planning',
+            package='unitree_rl_deploy',
             executable='unitree_ros2_bridge',
             name='unitree_ros2_bridge',
             output='screen',
@@ -112,13 +100,12 @@ def launch_setup(context):
 
 
 def generate_launch_description():
-    champ_share = get_package_share_directory('champ_base_gait_planning')
-    rl_share = Path(get_package_share_directory('unitree_rl_deploy'))
-    robots = _rl_robots(rl_share) or available_robots(champ_share)
+    pkg = Path(get_package_share_directory('unitree_rl_deploy'))
+    robots = available_robots(pkg)
     return LaunchDescription([
         DeclareLaunchArgument(
             'robot',
-            description='Robot name with config/<robot>_rl.yaml: ' + ', '.join(robots),
+            description='Robot name: ' + ', '.join(robots),
         ),
         DeclareLaunchArgument(
             'network_interface',

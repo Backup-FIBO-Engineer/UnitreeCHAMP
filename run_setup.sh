@@ -26,7 +26,8 @@ echo ""
 
 
 echo "Setup unitree ros2 environment"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
 source /opt/ros/humble/setup.bash
-source $HOME/UnitreeCHAMP/install/setup.bash
+source "${ROOT}/install/setup.bash"
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="enp2s0" priority="default" multicast="default" /></Interfaces><AllowMulticast>spdp</AllowMulticast></General><Internal><SocketReceiveBufferSize min="64MB"/></Internal></Domain></CycloneDDS>'
