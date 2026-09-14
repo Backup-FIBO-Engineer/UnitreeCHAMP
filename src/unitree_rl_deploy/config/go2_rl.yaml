@@ -5,6 +5,9 @@
 #
 # Typical 45-D actor (no lin_vel, no clock):
 #   ang_vel(3) gravity(3) command(3) dof_pos(12) dof_vel(12) action(12)
+# Official unitree_rl_gym Go2 is 48-D with lin_vel first:
+#   terms: [lin_vel, ang_vel, gravity, command, dof_pos, dof_vel, action]
+# Deploy then feeds lin_vel as zeros unless you add an odom source.
 /**:
   ros__parameters:
     policy_path: ""
@@ -47,7 +50,9 @@
     max_cmd: [1.0, 0.6, 1.2]
     imu_timeout_sec: 0.2
     joint_timeout_sec: 0.2
-    # Uncomment to override config/go2_lowcmd.yaml PD (match training stiffness).
+    cmd_timeout_sec: 0.5
+    # Uncomment to match unitree_rl_gym Go2 PD (stiffness 20, damping 0.5).
+    # Default hardware PD is the stand example in config/go2_lowcmd.yaml (60 / 5).
     # kp: 20.0
     # kd: 0.5
     observation:

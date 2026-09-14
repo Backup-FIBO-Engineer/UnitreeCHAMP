@@ -58,6 +58,8 @@ class PolicyRunner(Node):
         self._cmd = np.zeros(3, dtype=np.float32)
         self._last_imu_mono = 0.0
         self._last_joint_mono = 0.0
+        self._last_cmd_mono = 0.0
+        self._has_cmd = False
         self._started = False
         self._name_to_index = {name: i for i, name in enumerate(cfg.joint_names)}
 
@@ -107,6 +109,8 @@ class PolicyRunner(Node):
 
     def _on_cmd(self, msg: Twist) -> None:
         self._cmd = self.controller.clamp_command(msg.linear.x, msg.linear.y, msg.angular.z)
+        self._has_cmd = True
+        self._last_cmd_mono = time.monotonic()
 
     def _on_imu(self, msg: Imu) -> None:
         self._quat = np.array(
@@ -167,15 +171,24 @@ class PolicyRunner(Node):
                 return
             self._publish_targets(self.cfg.default_angles)
             return
+        cmd = self._cmd
+        if (
+            self.cfg.cmd_timeout_sec > 0.0
+            and (
+                not self._has_cmd
+                or (now - self._last_cmd_mono) > self.cfg.cmd_timeout_sec
+            )
+        ):
+            cmd = np.zeros(3, dtype=np.float32)
         try:
             targets = self.controller.targets(SensorSample(
                 q=self._q,
                 dq=self._dq if self._dq is not None else np.zeros(self.cfg.num_actions),
                 quat_xyzw=self._quat,
                 ang_vel=self._ang_vel,
-                cmd_vx=float(self._cmd[0]),
-                cmd_vy=float(self._cmd[1]),
-                cmd_wz=float(self._cmd[2]),
+                cmd_vx=float(cmd[0]),
+                cmd_vy=float(cmd[1]),
+                cmd_wz=float(cmd[2]),
                 accel=self._accel,
                 orientation_valid=self._orientation_valid,
                 time_sec=now,

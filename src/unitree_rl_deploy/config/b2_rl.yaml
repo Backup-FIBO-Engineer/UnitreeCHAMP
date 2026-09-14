@@ -43,7 +43,9 @@
     max_cmd: [1.0, 0.5, 1.0]
     imu_timeout_sec: 0.2
     joint_timeout_sec: 0.2
-    # Uncomment to override config/b2_lowcmd.yaml PD (match training stiffness).
+    cmd_timeout_sec: 0.5
+    # Uncomment to match training PD. Default hardware PD is the B2 stand
+    # example in config/b2_lowcmd.yaml (1000 / 10).
     # kp: 1000.0
     # kd: 10.0
     observation:

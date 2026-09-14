@@ -31,6 +31,21 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, JointState
 
+try:
+    from unitree_rl_deploy.config import parse_ros_bool
+except ImportError:  # running the script without the installed Python package
+    def parse_ros_bool(value, default: bool = False) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        text = str(value).strip().lower()
+        if text in ('true', '1', 'yes', 'on'):
+            return True
+        if text in ('false', '0', 'no', 'off', ''):
+            return False
+        raise ValueError(f'invalid bool {value!r}')
+
 # joints_map keys (FL, FR, RL, RR).
 LEGS = ('left_front', 'right_front', 'left_hind', 'right_hind')
 JOINTS_PER_LEG = 3
@@ -181,7 +196,7 @@ class MujocoSim(Node):
 
         self.command_timeout_sec = float(self._param('command_timeout_sec', 0.5))
         self.realtime_factor = float(self._param('realtime_factor', 1.0))
-        self.headless = bool(self._param('headless', False))
+        self.headless = parse_ros_bool(self._param('headless', False))
 
         command_topic = str(self._param('command_topic', 'joint_commands'))
         joint_state_topic = str(self._param('joint_state_topic', 'joint_states'))

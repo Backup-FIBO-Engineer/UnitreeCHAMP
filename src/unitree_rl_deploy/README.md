@@ -24,8 +24,14 @@ that produced the checkpoint**. A 45-D actor trained as
 
 `ang_vel, gravity, command, dof_pos, dof_vel, action`
 
-loads with the shipped yaml. If your policy used `lin_vel`, a gait clock, or
-a stacked history, edit `observation.terms` / `history` only.
+loads with the shipped yaml. Official `unitree_rl_gym` Go2 is **48-D** with
+`lin_vel` first:
+
+`lin_vel, ang_vel, gravity, command, dof_pos, dof_vel, action`
+
+Put `lin_vel` at the start of `observation.terms` (the runner fills it with
+zeros). A gait clock or stacked history is the same: edit `terms` / `history`
+only, in training order.
 
 ## Build
 

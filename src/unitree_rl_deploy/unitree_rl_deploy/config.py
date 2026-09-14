@@ -11,6 +11,22 @@ import yaml
 from unitree_rl_deploy.observation import ObservationConfig
 
 
+def parse_ros_bool(value, default: bool = False) -> bool:
+    """Launch substitutions arrive as strings; `bool('false')` is True in Python."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, np.integer)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in ('true', '1', 'yes', 'on'):
+        return True
+    if text in ('false', '0', 'no', 'off', ''):
+        return False
+    raise ValueError(f'invalid bool {value!r}')
+
+
 def load_ros_params(path: Path | str) -> dict:
     document = yaml.safe_load(Path(path).read_text(encoding='utf-8')) or {}
     for node_value in document.values():
@@ -51,6 +67,7 @@ class DeployConfig:
     max_cmd: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.6, 1.2], dtype=np.float32))
     imu_timeout_sec: float = 0.2
     joint_timeout_sec: float = 0.2
+    cmd_timeout_sec: float = 0.5
     command_topic: str = 'joint_commands'
     joint_state_topic: str = 'joint_states'
     imu_topic: str = 'imu/data'
@@ -106,6 +123,7 @@ class DeployConfig:
             max_cmd=data.get('max_cmd', [1.0, 0.6, 1.2]),
             imu_timeout_sec=float(data.get('imu_timeout_sec', 0.2)),
             joint_timeout_sec=float(data.get('joint_timeout_sec', 0.2)),
+            cmd_timeout_sec=float(data.get('cmd_timeout_sec', 0.5)),
             command_topic=str(data.get('command_topic', 'joint_commands')),
             joint_state_topic=str(data.get('joint_state_topic', 'joint_states')),
             imu_topic=str(data.get('imu_topic', 'imu/data')),

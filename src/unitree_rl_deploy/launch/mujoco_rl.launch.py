@@ -60,7 +60,7 @@ def launch_setup(context):
             output='screen',
             parameters=sim_params + [
                 {'xml_path': str(files.mujoco_xml)},
-                {'headless': LaunchConfiguration('headless')},
+                {'headless': ParameterValue(LaunchConfiguration('headless'), value_type=bool)},
                 {'command_topic': rl_params.get('command_topic', 'joint_commands')},
                 {'joint_state_topic': rl_params.get('joint_state_topic', 'joint_states')},
                 {'odom_topic': 'odom/ground_truth'},
