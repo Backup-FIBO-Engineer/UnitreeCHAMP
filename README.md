@@ -93,7 +93,8 @@ Xbox One S (Model 1708, Bluetooth) — locomotion `/cmd_vel` and body-pose
 mode on the same pad (`src/xbox_one_s_teleop`):
 
 ```bash
-./run_xbox_teleop.sh go2          # or robot:=b2 / xgo; do not run keyboard teleop too
+./run_xbox_teleop.sh b2          # or go2 / xgo; do not run keyboard teleop too
+# launch log must be "Opened joystick: Xbox ...", not RustDesk
 ```
 
 LB toggles walk ↔ body pose, hold RB to walk (left stick vx/vy, right stick

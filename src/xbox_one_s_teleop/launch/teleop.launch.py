@@ -18,6 +18,8 @@ from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+from xbox_one_s_teleop.sdl_devices import resolve_joy_device_id
+
 
 def _load_ros_params(path: Path) -> dict:
     data = yaml.safe_load(path.read_text()) or {}
@@ -64,9 +66,33 @@ def launch_setup(context):
     mapping = str(Path(pkg) / 'config' / mapping_name)
     robot = LaunchConfiguration('robot').perform(context).strip()
     overlay = _robot_limits(robot)
+    requested_id = LaunchConfiguration('device_id').perform(context).strip()
+    device_name = LaunchConfiguration('device_name').perform(context).strip()
+    device_id, sdl_devices = resolve_joy_device_id(requested_id)
+    chosen_name = next((name for idx, name in sdl_devices if idx == device_id), '')
+    joy_params = {
+        'device_id': device_id,
+        'deadzone': 0.05,
+        'autorepeat_rate': 20.0,
+    }
+    if device_name:
+        joy_params['device_name'] = device_name
     actions = [
         LogInfo(msg=[f'Xbox teleop mapping {mapping_name}']),
+        LogInfo(msg=[
+            'SDL joysticks (not /dev/input/jsN): '
+            + (', '.join(f'{idx}:{name}' for idx, name in sdl_devices) or 'none listed')
+            + f'; joy_node device_id={device_id}'
+            + (f' ({chosen_name})' if chosen_name else '')
+            + (f', device_name={device_name}' if device_name else '')
+        ]),
     ]
+    if chosen_name and ('rustdesk' in chosen_name.lower() or 'uinput' in chosen_name.lower()):
+        actions.append(LogInfo(msg=[
+            'WARNING: joy_node would open a virtual pad (often RustDesk). '
+            'List devices with: ros2 run joy joy_enumerate_devices '
+            'then pass device_id:=<Xbox id> or device_name:="Xbox Wireless Controller"'
+        ]))
     if overlay:
         actions.append(LogInfo(msg=[
             f'Xbox teleop limits from champ_base_gait_planning robot={robot}: {overlay}',
@@ -81,11 +107,7 @@ def launch_setup(context):
             executable='joy_node',
             name='joy_node',
             output='screen',
-            parameters=[{
-                'device_id': int(LaunchConfiguration('device_id').perform(context)),
-                'deadzone': 0.05,
-                'autorepeat_rate': 20.0,
-            }],
+            parameters=[joy_params],
         ),
         Node(
             package='xbox_one_s_teleop',
@@ -107,8 +129,19 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'device_id',
-            default_value='0',
-            description='joy_node device_id (0 = first joystick, usually /dev/input/js0)',
+            default_value='auto',
+            description=(
+                'SDL joystick index for joy_node. auto = first name containing Xbox '
+                '(skips RustDesk/uinput). This is not /dev/input/jsN.'
+            ),
+        ),
+        DeclareLaunchArgument(
+            'device_name',
+            default_value='',
+            description=(
+                'Exact SDL name for joy_node (overrides index). '
+                'Example: device_name:="Xbox Wireless Controller"'
+            ),
         ),
         DeclareLaunchArgument(
             'driver',

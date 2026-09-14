@@ -55,7 +55,22 @@ source install/setup.bash
 # same as: ros2 launch xbox_one_s_teleop teleop.launch.py robot:=go2
 ```
 
-Confirm the pad: `ros2 topic echo /joy` (axes move when you move the sticks).
+Confirm the pad: the launch log must say `Opened joystick: Xbox ...`, not
+RustDesk. Then `ros2 topic echo /joy` (axes move when you move the sticks).
+
+SDL index is **not** `/dev/input/jsN`. List what `joy_node` can see:
+
+```bash
+ros2 run joy joy_enumerate_devices
+```
+
+Default `device_id:=auto` picks the first name containing `Xbox` and skips
+virtual pads (RustDesk UInput Keyboard often sits at SDL id 0). To force one:
+
+```bash
+./run_xbox_teleop.sh b2 device_id:=1
+./run_xbox_teleop.sh b2 device_name:="Xbox Wireless Controller"
+```
 
 If `/joy` right-stick axes are **3 and 4** (kernel `jstest` order, not SDL),
 launch with `driver:=linux`:
@@ -116,7 +131,10 @@ ros2 topic pub --once /body_pose geometry_msgs/msg/Pose \
 
 ## If the robot does not walk
 
-1. Hold **RB** (dead-man). Sticks do nothing without it.
-2. Check `/xbox_teleop/mode` is `locomotion` (press LB if you are in body pose).
-3. `ros2 topic echo /cmd_vel` while holding RB and pushing the left stick.
-4. `ros2 topic echo /joy` — if right stick is axes 3/4, use `driver:=linux`.
+1. Look at the launch line `Opened joystick:`. If it is `RustDesk UInput Keyboard`
+   (or anything that is not Xbox), it is the wrong SDL device. Run
+   `ros2 run joy joy_enumerate_devices` and pass that Xbox `device_id:=`.
+2. Hold **RB** (dead-man). Sticks do nothing without it.
+3. Check `/xbox_teleop/mode` is `locomotion` (press LB if you are in body pose).
+4. `ros2 topic echo /cmd_vel` while holding RB and pushing the left stick.
+5. `ros2 topic echo /joy` — if right stick is axes 3/4, use `driver:=linux`.

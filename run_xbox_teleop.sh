@@ -1,7 +1,9 @@
 #!/bin/bash
 # Usage: ./run_xbox_teleop.sh [robot] [extra launch args]
 #   ./run_xbox_teleop.sh go2
+#   ./run_xbox_teleop.sh b2
 #   ./run_xbox_teleop.sh b2 device_id:=1
+#   ./run_xbox_teleop.sh b2 device_name:="Xbox Wireless Controller"
 set -e
 cd "$(dirname "$0")"
 
