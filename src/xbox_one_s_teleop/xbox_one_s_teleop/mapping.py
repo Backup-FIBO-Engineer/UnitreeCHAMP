@@ -41,6 +41,9 @@ def button_at(buttons, index: int) -> bool:
 
 
 def rising_edge(buttons, previous, index: int) -> bool:
+    # No previous sample (first /joy packet, or empty latch): not a press.
+    if previous is None or len(previous) == 0:
+        return False
     return button_at(buttons, index) and not button_at(previous, index)
 
 

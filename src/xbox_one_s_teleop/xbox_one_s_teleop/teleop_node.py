@@ -43,6 +43,7 @@ class XboxOneSTeleop(Node):
         self.roll = 0.0
         self.pitch = 0.0
         self.prev_buttons: List[int] = []
+        self._buttons_latched = False
         self.last_joy: Optional[Joy] = None
         self.last_joy_time = self.get_clock().now()
 
@@ -64,17 +65,17 @@ class XboxOneSTeleop(Node):
         self.declare_parameter('publish_rate', 20.0)
         self.declare_parameter('joy_timeout_sec', 0.5)
         self.declare_parameter('deadzone', 0.15)
-        # Linux xpad / xpadneo (Xbox One S 1708 Bluetooth)
+        # SDL2 axes (ROS 2 joy_node). Linux js order is the other yaml.
         self.declare_parameter('axis_vx', 1)       # left stick Y
         self.declare_parameter('axis_vy', 0)       # left stick X
-        self.declare_parameter('axis_yaw', 2)      # right stick X (SDL2 joy_node)
+        self.declare_parameter('axis_yaw', 2)      # right stick X
         self.declare_parameter('axis_roll', 2)
         self.declare_parameter('axis_pitch', 3)    # right stick Y
-        self.declare_parameter('invert_vx', True)  # stick up → +vx
-        self.declare_parameter('invert_vy', False)
-        self.declare_parameter('invert_yaw', False)
-        self.declare_parameter('invert_roll', False)
-        self.declare_parameter('invert_pitch', False)  # stick up (linux −Y) → nose up (−pitch)
+        self.declare_parameter('invert_vx', True)    # stick up (−Y) → +vx (forward)
+        self.declare_parameter('invert_vy', True)    # stick right → −vy (robot right)
+        self.declare_parameter('invert_yaw', True)   # stick right → −yaw (turn right)
+        self.declare_parameter('invert_roll', False)  # stick right → +roll (right side down)
+        self.declare_parameter('invert_pitch', False)  # stick up (−Y) → nose up (−pitch)
         self.declare_parameter('button_mode', 4)      # LB
         self.declare_parameter('button_deadman', 5)   # RB
         self.declare_parameter('button_reset', 0)     # A
@@ -93,6 +94,14 @@ class XboxOneSTeleop(Node):
 
     def _on_joy(self, msg: Joy) -> None:
         buttons = list(msg.buttons)
+        # First packet only latches state: a button already held at connect
+        # must not look like a rising edge (would flip mode / reset pose).
+        if not self._buttons_latched:
+            self.prev_buttons = buttons
+            self._buttons_latched = True
+            self.last_joy = msg
+            self.last_joy_time = self.get_clock().now()
+            return
         if rising_edge(buttons, self.prev_buttons, int(self._p('button_mode'))):
             self.mode = (
                 MODE_BODY_POSE if self.mode == MODE_LOCOMOTION else MODE_LOCOMOTION

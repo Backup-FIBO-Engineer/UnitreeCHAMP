@@ -1,8 +1,12 @@
-"""Xbox One S Model 1708 (Bluetooth) teleop for this CHAMP workspace.
+# Xbox One S Model 1708 (Bluetooth) teleop
 
-Pairs with `joy_node` (`ros-humble-joy`). Stick mapping is
-`config/xbox_one_s_1708_bt.yaml`. Speed and body-angle limits come from the
-CHAMP robot yaml when you pass `robot:=go2|b2|xgo`.
+ROS 2 Humble package (`xbox_one_s_teleop`) for this CHAMP workspace: one pad
+for `/cmd_vel` and `/body_pose`. Pair with `joy_node` (`ros-humble-joy`). Stick
+indices are `config/xbox_one_s_1708_bt.yaml` (SDL2). Speed and body-angle
+limits come from the CHAMP robot yaml when you pass `robot:=go2|b2|xgo`.
+
+Do **not** run `./run_teleop.sh` / `teleop_twist_keyboard` at the same time
+(both publish `/cmd_vel`).
 
 ## Bluetooth (Model 1708)
 
@@ -31,46 +35,88 @@ ls /dev/input/js*
 jstest /dev/input/js0    # sudo apt install joystick
 ```
 
-You need to be in the `input` group: `sudo gpasswd -a $USER input` then log out.
+You need to be in the `input` group: `sudo gpasswd -a $USER input` then log out
+and back in.
 
 ```bash
-sudo apt install ros-humble-joy ros-humble-teleop-twist-joy   # joy is required
+sudo apt install ros-humble-joy    # required. Jazzy: ros-jazzy-joy
 ```
-
-Jazzy: `ros-jazzy-joy`.
 
 ## Run
 
-Sim or Sim2Real already running in another terminal, then:
+Sim or Sim2Real already running in another terminal, then from the workspace:
 
 ```bash
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-ros2 launch xbox_one_s_teleop teleop.launch.py robot:=go2
-# or: ./run_xbox_teleop.sh go2
+colcon build --packages-select xbox_one_s_teleop
+source install/setup.bash
+./run_xbox_teleop.sh go2          # or b2 / xgo
+# same as: ros2 launch xbox_one_s_teleop teleop.launch.py robot:=go2
 ```
 
-Do not run `teleop_twist_keyboard` at the same time (both publish `/cmd_vel`).
+Confirm the pad: `ros2 topic echo /joy` (axes move when you move the sticks).
+
+If `/joy` right-stick axes are **3 and 4** (kernel `jstest` order, not SDL),
+launch with `driver:=linux`:
+
+```bash
+./run_xbox_teleop.sh go2 driver:=linux
+```
 
 ## Buttons (XInput / Linux js)
 
 | Control | Action |
 |---|---|
 | **LB** | toggle **locomotion** ↔ **body pose** |
-| **RB** (hold) | locomotion: enable `/cmd_vel` (release = stop) |
-| **A** | `/body_pose` identity — body level, same as `orientation: {w: 1.0}` |
+| **RB** (**hold**) | locomotion: enable `/cmd_vel` (**release = stop**) |
+| **A** | `/body_pose` identity — body level, same as `{orientation: {w: 1.0}}` |
 | **B** | zero `/cmd_vel` now |
-| Left stick X/Y | locomotion: **vy** / **vx** together |
+| Left stick X + Y | locomotion: **vy** and **vx** together |
 | Right stick X | locomotion: **yaw**; body-pose: **roll** |
 | Right stick Y | body-pose: **pitch** (up = nose up) |
 
 Mode is published on `/xbox_teleop/mode` (`locomotion` or `body_pose`).
 
-In body-pose mode `/cmd_vel` is held at zero. Stick deflection is a **rate**
-(full stick ≈ `desired_rate` rad/s of that robot). Releasing the stick **holds**
-the last roll/pitch so you can switch back to locomotion and walk while tilted.
-Limits are `max_roll` / `max_pitch` of `config/<robot>_body_pose.yaml`.
+Natural stick signs (ROS `+y` = left, `+yaw` = CCW, `+pitch` = nose **down**):
 
-If `/joy` right-stick axes are 3 and 4 (kernel `jstest` order, not SDL), launch
-`driver:=linux` to load `xbox_one_s_1708_bt_linuxjs.yaml`. Confirm with
-`ros2 topic echo /joy`.
+- stick up → walk forward / nose up
+- stick right → strafe right / turn right / roll right-side-down
+
+### Locomotion (default)
+
+Hold **RB**, then left stick walks (forward/back **and** lateral at once) while
+right stick X yaws. Releasing RB publishes zero Twist.
+
+### Body pose
+
+Press **LB** once. `/cmd_vel` is held at zero. Right stick X/Y are **rates**,
+not a one-shot pose: full stick ≈ that robot's `body_pose.desired_rate` rad/s
+(Go2 0.5 rad/s). Releasing the stick **holds** the last roll/pitch so you can
+press **LB** again and walk while tilted.
+
+The CLI example that pitches the body nose-up by 0.10 rad:
+
+```bash
+ros2 topic pub --once /body_pose geometry_msgs/msg/Pose \
+  "{orientation: {y: -0.04998, w: 0.99875}}"
+```
+
+is the same quaternion as RPY `(0, -0.10, 0)`. On the pad: body-pose mode,
+hold the right stick **up** for about `0.10 / desired_rate` seconds (Go2 ≈ 0.2 s),
+then release. Limits are `max_roll` / `max_pitch` in
+`config/<robot>_body_pose.yaml` (Go2 0.25 / 0.20 rad).
+
+**A** publishes identity, same as:
+
+```bash
+ros2 topic pub --once /body_pose geometry_msgs/msg/Pose \
+  "{orientation: {w: 1.0}}"
+```
+
+## If the robot does not walk
+
+1. Hold **RB** (dead-man). Sticks do nothing without it.
+2. Check `/xbox_teleop/mode` is `locomotion` (press LB if you are in body pose).
+3. `ros2 topic echo /cmd_vel` while holding RB and pushing the left stick.
+4. `ros2 topic echo /joy` — if right stick is axes 3/4, use `driver:=linux`.

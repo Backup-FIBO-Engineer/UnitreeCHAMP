@@ -16,6 +16,9 @@
 #
 # Locomotion: left stick X/Y = vy / vx (simultaneous), right stick X = yaw.
 # Body pose:  right stick X/Y = body roll / pitch rates (simultaneous).
+# invert_vy/yaw true: stick right → robot right / turn right (ROS +y left, +yaw CCW).
+# invert_roll false: stick right → +roll (right side down). invert_pitch false:
+# stick up (negative Y) → nose up (−pitch).
 #
 # Speed and angle limits are overwritten by teleop.launch.py from
 # champ_base_gait_planning config/<robot>_{gait,body_pose}.yaml when robot:= is set.
@@ -33,8 +36,8 @@
     axis_roll: 2
     axis_pitch: 3
     invert_vx: true
-    invert_vy: false
-    invert_yaw: false
+    invert_vy: true
+    invert_yaw: true
     invert_roll: false
     invert_pitch: false
     button_mode: 4

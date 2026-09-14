@@ -15,8 +15,8 @@
     axis_roll: 3
     axis_pitch: 4
     invert_vx: true
-    invert_vy: false
-    invert_yaw: false
+    invert_vy: true
+    invert_yaw: true
     invert_roll: false
     invert_pitch: false
     button_mode: 4
