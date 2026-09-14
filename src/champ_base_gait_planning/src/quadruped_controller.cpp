@@ -163,9 +163,12 @@ void QuadrupedController::cmdVelCallback_(const geometry_msgs::msg::Twist::Share
       "CHAMP clamps it. Lower the teleop speed (z/x) to gait.max_linear_velocity_* of this robot.",
       msg->linear.x, msg->linear.y, msg->angular.z, max_x, max_y, max_z);
   }
-  cmd_vel_target_.linear.x = static_cast<float>(msg->linear.x);
-  cmd_vel_target_.linear.y = static_cast<float>(msg->linear.y);
-  cmd_vel_target_.angular.z = static_cast<float>(msg->angular.z);
+  cmd_vel_target_.linear.x = static_cast<float>(
+    std::max(-max_x, std::min(max_x, msg->linear.x)));
+  cmd_vel_target_.linear.y = static_cast<float>(
+    std::max(-max_y, std::min(max_y, msg->linear.y)));
+  cmd_vel_target_.angular.z = static_cast<float>(
+    std::max(-max_z, std::min(max_z, msg->angular.z)));
 }
 
 void QuadrupedController::cmdPoseCallback_(const geometry_msgs::msg::Pose::SharedPtr msg)
