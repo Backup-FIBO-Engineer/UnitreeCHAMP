@@ -42,11 +42,16 @@ def launch_setup(context):
         {'imu_topic': LaunchConfiguration('imu_topic')},
     ]
     odom_topic = LaunchConfiguration('odom_topic').perform(context).strip()
+    base_state_topic = LaunchConfiguration('base_state_topic').perform(context).strip()
     if odom_topic:
         runner_params.append({'odom_topic': odom_topic})
-    base_state_topic = LaunchConfiguration('base_state_topic').perform(context).strip()
     if base_state_topic:
         runner_params.append({'base_state_topic': base_state_topic})
+        if not odom_topic:
+            # Do not keep yaml odom/ground_truth on a real robot.
+            runner_params.append({'odom_topic': ''})
+    if not odom_topic and not base_state_topic:
+        runner_params.append({'odom_topic': '/odom'})
     lin_vel_frame = LaunchConfiguration('lin_vel_frame').perform(context).strip()
     if lin_vel_frame:
         runner_params.append({'lin_vel_frame': lin_vel_frame})
@@ -135,8 +140,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'odom_topic',
             default_value='',
-            description='nav_msgs/Odometry for lin_vel. Empty uses yaml '
-                        '(odom/ground_truth). Estimator example: odom_topic:=/odom',
+            description='nav_msgs/Odometry for lin_vel. Empty uses /odom '
+                        '(not yaml odom/ground_truth). Estimator example: odom_topic:=/odom',
         ),
         DeclareLaunchArgument(
             'base_state_topic',

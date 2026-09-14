@@ -4,11 +4,11 @@
 /**:
   ros__parameters:
     sim:
-      # Position-actuator gains. unitree_ros2 b2_stand_example drives the real
-      # B2 with Kp 1000 / Kd 10; hip abduction gets half of that.
-      actuator_kp_hip: 500.0
-      actuator_kp_leg: 1000.0
-      actuator_kv: 20.0
+      # Documented to match mujoco/b2.xml (DLS walking / train PD). The XML is
+      # the source of truth at runtime.
+      actuator_kp_hip: 100.0
+      actuator_kp_leg: 100.0
+      actuator_kv: 5.0
       joint_damping: 0.5
       joint_armature: 0.01
       joint_frictionloss: 0.05

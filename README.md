@@ -1,9 +1,9 @@
 # UnitreeRLDeploy
 
-Run a **trained** Unitree Go2 or B2 locomotion policy in MuJoCo and on the
-real robot over [`unitree_ros2`](https://github.com/unitreerobotics/unitree_ros2)
+Run a **trained** Unitree Go2 or B2 DLS Flat / Rough-Blind policy in MuJoCo and
+on the real robot over [`unitree_ros2`](https://github.com/unitreerobotics/unitree_ros2)
 (`/lowcmd`, `/lowstate`). Policy deploy only; there is **no RL training**
-in this repository.
+in this repository. Vision / 3D-camera policies are out of scope.
 
 ```
 /cmd_vel  +  IMU  +  joints  +  odom (lin_vel)  ->  policy_runner  ->  /joint_commands
@@ -20,7 +20,8 @@ Packages:
 Put your actor in `src/unitree_rl_deploy/policies/` or pass `policy:=/path/to/file`
 (TorchScript `.pt`, actor `state_dict`, or ONNX). Observation layout lives in
 `config/go2_rl.yaml` / `config/b2_rl.yaml` and must match training (shipped
-default is 48-D with `lin_vel` first, same as unitree_rl_gym / Isaac Lab).
+default is DLS **260-D**: 52-D × history 5, hip-group joint order, unscaled
+commands, gait clock). The file must take 260 floats and emit 12 actions.
 
 ## Build
 
@@ -47,7 +48,8 @@ Without `policy:=` the robot holds `default_angles` (stand) so you can check top
 
 ## Real robot
 
-Sport off, NIC toward the robot, CycloneDDS on domain 0.
+Sport off, NIC toward the robot, CycloneDDS on domain 0. A velocity estimator
+must publish `/odom` (default) or DLS `/base_state`.
 
 ```bash
 ./run_rl_sim2real.sh go2 eth0 policy:=/abs/path/go2.pt
@@ -58,7 +60,7 @@ Sport off, NIC toward the robot, CycloneDDS on domain 0.
 ```
 
 The bridge maps joints by name, ramps into the first command, clamps to URDF
-limits, and talks `/lowcmd` + `/lowstate`. Match training PD with `kp`/`kd` in
-the robot `_rl.yaml` if it is not the stand-example gains in `_lowcmd.yaml`.
+limits, and talks `/lowcmd` + `/lowstate`. Walking PD is in `_rl.yaml`
+(Go2 20/2, B2 100/5) and is forwarded to the bridge.
 
 Details: `src/unitree_rl_deploy/README.md`.

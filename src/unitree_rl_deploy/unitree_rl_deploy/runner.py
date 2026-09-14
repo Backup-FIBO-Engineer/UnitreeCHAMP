@@ -2,7 +2,8 @@
 
 joint_commands is the topic MuJoCo and unitree_ros2_bridge consume.
 Base linear velocity (training `lin_vel`) comes from nav_msgs/Odometry and,
-optionally, DLS `dls2_interface/BaseState`.
+optionally, DLS `dls2_interface/BaseState`, rotated into the body frame.
+The controller then adds ω × r_com so the value matches Isaac `root_lin_vel_b`.
 """
 from __future__ import annotations
 
@@ -109,7 +110,8 @@ class PolicyRunner(Node):
         self.get_logger().info(
             f'RL policy runner: {cfg.num_actions} joints, obs {cfg.num_obs} '
             f'({cfg.observation.history} x {cfg.observation.single_size}), '
-            f'{cfg.control_rate:.0f} Hz, policy={self.policy_kind!r}'
+            f'{cfg.control_rate:.0f} Hz, policy={self.policy_kind!r}, '
+            f'filter_actions={cfg.use_filter_actions}'
         )
         if self._needs_lin_vel:
             sources = []

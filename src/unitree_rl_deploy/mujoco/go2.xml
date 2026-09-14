@@ -251,17 +251,17 @@
   </worldbody>
 
   <actuator>
-    <position name="FL_hip_joint" joint="FL_hip_joint" kp="80.0" kv="6.0" ctrlrange="-1.0472 1.0472" forcerange="-23.7 23.7"/>
-    <position name="FL_thigh_joint" joint="FL_thigh_joint" kp="160.0" kv="6.0" ctrlrange="-1.5708 3.4907" forcerange="-23.7 23.7"/>
-    <position name="FL_calf_joint" joint="FL_calf_joint" kp="160.0" kv="6.0" ctrlrange="-2.7227 -0.83776" forcerange="-45.43 45.43"/>
-    <position name="FR_hip_joint" joint="FR_hip_joint" kp="80.0" kv="6.0" ctrlrange="-1.0472 1.0472" forcerange="-23.7 23.7"/>
-    <position name="FR_thigh_joint" joint="FR_thigh_joint" kp="160.0" kv="6.0" ctrlrange="-1.5708 3.4907" forcerange="-23.7 23.7"/>
-    <position name="FR_calf_joint" joint="FR_calf_joint" kp="160.0" kv="6.0" ctrlrange="-2.7227 -0.83776" forcerange="-45.43 45.43"/>
-    <position name="RL_hip_joint" joint="RL_hip_joint" kp="80.0" kv="6.0" ctrlrange="-1.0472 1.0472" forcerange="-23.7 23.7"/>
-    <position name="RL_thigh_joint" joint="RL_thigh_joint" kp="160.0" kv="6.0" ctrlrange="-0.5236 4.5379" forcerange="-23.7 23.7"/>
-    <position name="RL_calf_joint" joint="RL_calf_joint" kp="160.0" kv="6.0" ctrlrange="-2.7227 -0.83776" forcerange="-45.43 45.43"/>
-    <position name="RR_hip_joint" joint="RR_hip_joint" kp="80.0" kv="6.0" ctrlrange="-1.0472 1.0472" forcerange="-23.7 23.7"/>
-    <position name="RR_thigh_joint" joint="RR_thigh_joint" kp="160.0" kv="6.0" ctrlrange="-0.5236 4.5379" forcerange="-23.7 23.7"/>
-    <position name="RR_calf_joint" joint="RR_calf_joint" kp="160.0" kv="6.0" ctrlrange="-2.7227 -0.83776" forcerange="-45.43 45.43"/>
+    <position name="FL_hip_joint" joint="FL_hip_joint" kp="20.0" kv="2.0" ctrlrange="-1.0472 1.0472" forcerange="-23.7 23.7"/>
+    <position name="FL_thigh_joint" joint="FL_thigh_joint" kp="20.0" kv="2.0" ctrlrange="-1.5708 3.4907" forcerange="-23.7 23.7"/>
+    <position name="FL_calf_joint" joint="FL_calf_joint" kp="20.0" kv="2.0" ctrlrange="-2.7227 -0.83776" forcerange="-45.43 45.43"/>
+    <position name="FR_hip_joint" joint="FR_hip_joint" kp="20.0" kv="2.0" ctrlrange="-1.0472 1.0472" forcerange="-23.7 23.7"/>
+    <position name="FR_thigh_joint" joint="FR_thigh_joint" kp="20.0" kv="2.0" ctrlrange="-1.5708 3.4907" forcerange="-23.7 23.7"/>
+    <position name="FR_calf_joint" joint="FR_calf_joint" kp="20.0" kv="2.0" ctrlrange="-2.7227 -0.83776" forcerange="-45.43 45.43"/>
+    <position name="RL_hip_joint" joint="RL_hip_joint" kp="20.0" kv="2.0" ctrlrange="-1.0472 1.0472" forcerange="-23.7 23.7"/>
+    <position name="RL_thigh_joint" joint="RL_thigh_joint" kp="20.0" kv="2.0" ctrlrange="-0.5236 4.5379" forcerange="-23.7 23.7"/>
+    <position name="RL_calf_joint" joint="RL_calf_joint" kp="20.0" kv="2.0" ctrlrange="-2.7227 -0.83776" forcerange="-45.43 45.43"/>
+    <position name="RR_hip_joint" joint="RR_hip_joint" kp="20.0" kv="2.0" ctrlrange="-1.0472 1.0472" forcerange="-23.7 23.7"/>
+    <position name="RR_thigh_joint" joint="RR_thigh_joint" kp="20.0" kv="2.0" ctrlrange="-0.5236 4.5379" forcerange="-23.7 23.7"/>
+    <position name="RR_calf_joint" joint="RR_calf_joint" kp="20.0" kv="2.0" ctrlrange="-2.7227 -0.83776" forcerange="-45.43 45.43"/>
   </actuator>
 </mujoco>

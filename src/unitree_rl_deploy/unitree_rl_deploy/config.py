@@ -60,11 +60,21 @@ class DeployConfig:
     observation: ObservationConfig
     policy_path: str = ''
     control_rate: float = 50.0
-    action_scale: float = 0.25
+    action_scale: float = 0.5
     hip_scale_reduction: float = 1.0
-    hip_indices: np.ndarray = field(default_factory=lambda: np.array([0, 3, 6, 9], dtype=np.int32))
-    clip_actions: float = 100.0
-    max_cmd: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.6, 1.2], dtype=np.float32))
+    hip_indices: np.ndarray = field(default_factory=lambda: np.array([0, 1, 2, 3], dtype=np.int32))
+    clip_actions: float = 3.0
+    use_filter_actions: bool = False
+    filter_alpha: float = 0.8
+    max_cmd: np.ndarray = field(default_factory=lambda: np.array([0.8, 0.25, 0.5], dtype=np.float32))
+    lin_vel_com_offset: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float32))
+    gait_phase_offsets: np.ndarray = field(
+        default_factory=lambda: np.array([0.0, 0.5, 0.5, 0.0], dtype=np.float32))
+    gait_step_freq_min: float = 1.4
+    gait_step_freq_max: float = 1.8
+    gait_speed_min: float = 0.4
+    gait_speed_max: float = 0.8
+    gait_still_command_threshold: float = 0.01
     imu_timeout_sec: float = 0.2
     joint_timeout_sec: float = 0.2
     cmd_timeout_sec: float = 0.5
@@ -90,6 +100,12 @@ class DeployConfig:
         if np.any(self.hip_indices < 0) or np.any(self.hip_indices >= n):
             raise ValueError('hip_indices must be in [0, num_actions)')
         self.max_cmd = _floats(self.max_cmd, 3, 'max_cmd')
+        self.lin_vel_com_offset = _floats(self.lin_vel_com_offset, 3, 'lin_vel_com_offset')
+        self.gait_phase_offsets = _floats(self.gait_phase_offsets, 4, 'gait_phase_offsets')
+        if not (0.0 <= float(self.filter_alpha) <= 1.0):
+            raise ValueError('filter_alpha must be in [0, 1]')
+        if self.gait_speed_max < self.gait_speed_min:
+            raise ValueError('gait_speed_max must be >= gait_speed_min')
         if self.observation.num_dofs != n:
             raise ValueError('observation.num_dofs must equal len(joint_names)')
         self.odom_topic = str(self.odom_topic or '').strip()
@@ -132,11 +148,20 @@ class DeployConfig:
             observation=observation,
             policy_path=str(data.get('policy_path', '') or ''),
             control_rate=float(data.get('control_rate', 50.0)),
-            action_scale=float(data.get('action_scale', 0.25)),
+            action_scale=float(data.get('action_scale', 0.5)),
             hip_scale_reduction=float(data.get('hip_scale_reduction', 1.0)),
-            hip_indices=data.get('hip_indices', [0, 3, 6, 9]),
-            clip_actions=float(data.get('clip_actions', 100.0)),
-            max_cmd=data.get('max_cmd', [1.0, 0.6, 1.2]),
+            hip_indices=data.get('hip_indices', [0, 1, 2, 3]),
+            clip_actions=float(data.get('clip_actions', 3.0)),
+            use_filter_actions=parse_ros_bool(data.get('use_filter_actions', False)),
+            filter_alpha=float(data.get('filter_alpha', 0.8)),
+            max_cmd=data.get('max_cmd', [0.8, 0.25, 0.5]),
+            lin_vel_com_offset=data.get('lin_vel_com_offset', [0.0, 0.0, 0.0]),
+            gait_phase_offsets=data.get('gait_phase_offsets', [0.0, 0.5, 0.5, 0.0]),
+            gait_step_freq_min=float(data.get('gait_step_freq_min', 1.4)),
+            gait_step_freq_max=float(data.get('gait_step_freq_max', 1.8)),
+            gait_speed_min=float(data.get('gait_speed_min', 0.4)),
+            gait_speed_max=float(data.get('gait_speed_max', 0.8)),
+            gait_still_command_threshold=float(data.get('gait_still_command_threshold', 0.01)),
             imu_timeout_sec=float(data.get('imu_timeout_sec', 0.2)),
             joint_timeout_sec=float(data.get('joint_timeout_sec', 0.2)),
             cmd_timeout_sec=float(data.get('cmd_timeout_sec', 0.5)),

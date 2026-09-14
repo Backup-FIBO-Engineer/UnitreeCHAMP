@@ -9,6 +9,7 @@ from unitree_rl_deploy.observation import (
     RobotObservation,
     as_quat_xyzw,
     as_vector3,
+    com_linear_velocity_body,
     linear_velocity_in_body_frame,
     pack_observation,
     projected_gravity_xyzw,
@@ -55,6 +56,22 @@ def test_clock_and_lin_vel_change_size():
     cfg = _cfg(terms=['ang_vel', 'gravity', 'command', 'lin_vel', 'dof_pos', 'dof_vel', 'action', 'clock'])
     assert cfg.single_size == 50
     assert cfg.needs_lin_vel is True
+    assert cfg.clock_size == 2
+
+
+def test_dls_clock_size_4_is_52():
+    cfg = _cfg(
+        terms=['lin_vel', 'ang_vel', 'gravity', 'command', 'dof_pos', 'dof_vel', 'action', 'clock'],
+        clock_size=4,
+        history=5,
+        lin_vel_scale=1.0,
+        ang_vel_scale=1.0,
+        dof_vel_scale=1.0,
+        cmd_scale=[1.0, 1.0, 1.0],
+    )
+    assert cfg.single_size == 52
+    assert cfg.size == 260
+    assert cfg.needs_clock is True
 
 
 def test_gym_lin_vel_first_is_48():
@@ -91,6 +108,21 @@ def test_lin_vel_term_requires_a_sample():
     )
     with pytest.raises(ValueError, match='lin_vel'):
         pack_observation(cfg, sample)
+
+
+def test_clock_size_4_requires_clock_sample():
+    cfg = _cfg(terms=['clock'], clock_size=4)
+    sample = RobotObservation(
+        ang_vel=np.zeros(3), gravity=np.zeros(3), command=np.zeros(3),
+        dof_pos=np.zeros(12), dof_vel=np.zeros(12), last_action=np.zeros(12),
+    )
+    with pytest.raises(ValueError, match='gait clock'):
+        pack_observation(cfg, sample)
+
+
+def test_invalid_clock_size_rejected():
+    with pytest.raises(ValueError, match='clock_size'):
+        _cfg(clock_size=3)
 
 
 class _XYZ:
@@ -134,6 +166,14 @@ def test_world_lin_vel_identity_quat_matches_world():
     )
 
 
+def test_world_to_body_then_com_lever():
+    s = math.sin(math.pi / 4.0)
+    c = math.cos(math.pi / 4.0)
+    v_body = linear_velocity_in_body_frame((1.0, 0.0, 0.0), 'world', (0.0, 0.0, s, c))
+    v_com = com_linear_velocity_body(v_body, (0.0, 0.0, 1.0), (0.02, 0.0, 0.0))
+    np.testing.assert_allclose(v_com, [0.0, -0.98, 0.0], atol=1e-5)
+
+
 def test_history_stacks_oldest_first():
     cfg = _cfg(history=3, terms=['command'], num_dofs=12)
     hist = ObservationHistory(cfg)
@@ -152,6 +192,26 @@ def test_history_stacks_oldest_first():
     assert third.reshape(3, 3)[0, 0] == pytest.approx(2.0)
     assert third.reshape(3, 3)[1, 0] == pytest.approx(4.0)
     assert third.reshape(3, 3)[2, 0] == pytest.approx(6.0)
+
+
+def test_history_starts_at_zeros_like_dls():
+    cfg = _cfg(history=3, terms=['command'], num_dofs=12, cmd_scale=[1.0, 1.0, 1.0])
+    hist = ObservationHistory(cfg)
+    sample = RobotObservation(
+        ang_vel=np.zeros(3), gravity=np.zeros(3),
+        command=np.array([7.0, 0.0, 0.0], np.float32),
+        dof_pos=np.zeros(12), dof_vel=np.zeros(12), last_action=np.zeros(12),
+    )
+    first = hist.push(pack_observation(cfg, sample))
+    np.testing.assert_allclose(first.reshape(3, 3)[0], 0.0)
+    np.testing.assert_allclose(first.reshape(3, 3)[1], 0.0)
+    np.testing.assert_allclose(first.reshape(3, 3)[2], [7.0, 0.0, 0.0])
+
+
+def test_com_lever_matches_rigid_body():
+    # ω = +z, r_com = +x → extra +y velocity at the COM.
+    v_com = com_linear_velocity_body((1.0, 0.0, 0.0), (0.0, 0.0, 2.0), (0.02, 0.0, 0.0))
+    np.testing.assert_allclose(v_com, [1.0, 0.04, 0.0], atol=1e-6)
 
 
 def test_clip_obs():

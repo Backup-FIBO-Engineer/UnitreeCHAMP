@@ -1,12 +1,14 @@
 """ROS-free observation packing for a Unitree locomotion actor.
 
-Shipped yaml is the 48-D unitree_rl_gym / Isaac Lab layout:
+Shipped yaml is the DLS Flat/Blind actor (Go2 and B2, no vision):
 
-    lin_vel(3) | ang_vel(3) | gravity(3) | command(3) | dof_pos(12) | dof_vel(12) | action(12)
+    lin_vel(3) | ang_vel(3) | gravity(3) | command(3)
+    | dof_pos(12) | dof_vel(12) | last_action(12) | gait_clock(4)
 
-A 45-D actor (no lin_vel) is the same list without the first term. Terms, scales
-and history length come from yaml so a checkpoint trained with clock or a
-stacked history still loads without code changes.
+One frame is 52-D. History length 5 stacks oldest→newest to 260-D.
+DLS trains with all scales = 1.0 (not the unitree_rl_gym 2.0 / 0.25 / 0.05
+layout). Terms, scales, clock size and history length still come from yaml so a
+different checkpoint can load without code changes.
 """
 from __future__ import annotations
 
@@ -29,6 +31,18 @@ KNOWN_TERMS = (
     TERM_GRAVITY,
     TERM_COMMAND,
     TERM_LIN_VEL,
+    TERM_DOF_POS,
+    TERM_DOF_VEL,
+    TERM_ACTION,
+    TERM_CLOCK,
+)
+
+# DLS Flat / Rough-Blind (use_imu=False, use_vision=False).
+DLS_BLIND_TERMS = (
+    TERM_LIN_VEL,
+    TERM_ANG_VEL,
+    TERM_GRAVITY,
+    TERM_COMMAND,
     TERM_DOF_POS,
     TERM_DOF_VEL,
     TERM_ACTION,
@@ -121,6 +135,18 @@ def linear_velocity_in_body_frame(
         f'lin_vel_frame must be one of {LIN_VEL_FRAMES}, got {source_frame!r}')
 
 
+def com_linear_velocity_body(
+    link_lin_vel_body: Sequence[float],
+    ang_vel_body: Sequence[float],
+    com_offset_body: Sequence[float],
+) -> np.ndarray:
+    """Isaac `root_lin_vel_b` is COM velocity: v_com_b = v_link_b + ω_b × r_com_b."""
+    v_link = as_vector3(link_lin_vel_body).astype(np.float64)
+    omega = as_vector3(ang_vel_body).astype(np.float64)
+    offset = as_vector3(com_offset_body).astype(np.float64)
+    return (v_link + np.cross(omega, offset)).astype(np.float32)
+
+
 @dataclass
 class ObservationConfig:
     terms: List[str]
@@ -133,6 +159,8 @@ class ObservationConfig:
     lin_vel_scale: float = 2.0
     cmd_scale: np.ndarray = field(default_factory=lambda: np.array([2.0, 2.0, 0.25], dtype=np.float32))
     clock_period: float = 0.8
+    # 2 = [sin, cos] of wall time. 4 = DLS gait phases (FL FR RL RR).
+    clock_size: int = 2
 
     def __post_init__(self) -> None:
         if self.num_dofs <= 0:
@@ -145,6 +173,9 @@ class ObservationConfig:
         if unknown:
             raise ValueError(f'unknown observation terms {unknown}; known: {KNOWN_TERMS}')
         self.cmd_scale = _as_float_array(self.cmd_scale, 3, 'cmd_scale')
+        self.clock_size = int(self.clock_size)
+        if self.clock_size not in (2, 4):
+            raise ValueError(f'observation.clock_size must be 2 or 4, got {self.clock_size}')
 
     @property
     def single_size(self) -> int:
@@ -155,7 +186,7 @@ class ObservationConfig:
             elif term in (TERM_DOF_POS, TERM_DOF_VEL, TERM_ACTION):
                 size += self.num_dofs
             elif term == TERM_CLOCK:
-                size += 2
+                size += self.clock_size
         return size
 
     @property
@@ -165,6 +196,10 @@ class ObservationConfig:
     @property
     def needs_lin_vel(self) -> bool:
         return TERM_LIN_VEL in self.terms
+
+    @property
+    def needs_clock(self) -> bool:
+        return TERM_CLOCK in self.terms
 
     @classmethod
     def from_mapping(cls, data: Mapping, num_dofs: int) -> 'ObservationConfig':
@@ -182,6 +217,7 @@ class ObservationConfig:
             lin_vel_scale=float(data.get('lin_vel_scale', 2.0)),
             cmd_scale=data.get('cmd_scale', [2.0, 2.0, 0.25]),
             clock_period=float(data.get('clock_period', 0.8)),
+            clock_size=int(data.get('clock_size', 2)),
         )
 
 
@@ -194,6 +230,7 @@ class RobotObservation:
     dof_vel: np.ndarray
     last_action: np.ndarray
     lin_vel: Optional[np.ndarray] = None
+    clock: Optional[np.ndarray] = None
     time_sec: float = 0.0
 
 
@@ -220,18 +257,28 @@ def pack_observation(cfg: ObservationConfig, sample: RobotObservation) -> np.nda
         elif term == TERM_ACTION:
             pieces.append(_as_float_array(sample.last_action, n, 'last_action'))
         elif term == TERM_CLOCK:
-            period = cfg.clock_period if cfg.clock_period > 0.0 else 0.8
-            phase = (float(sample.time_sec) / period) % 1.0
-            pieces.append(np.array(
-                [np.sin(2.0 * np.pi * phase), np.cos(2.0 * np.pi * phase)],
-                dtype=np.float32,
-            ))
+            if cfg.clock_size == 4:
+                if sample.clock is None:
+                    raise ValueError(
+                        'observation.clock_size is 4 but the sample has no gait clock')
+                pieces.append(_as_float_array(sample.clock, 4, 'clock'))
+            else:
+                period = cfg.clock_period if cfg.clock_period > 0.0 else 0.8
+                phase = (float(sample.time_sec) / period) % 1.0
+                pieces.append(np.array(
+                    [np.sin(2.0 * np.pi * phase), np.cos(2.0 * np.pi * phase)],
+                    dtype=np.float32,
+                ))
     packed = np.concatenate(pieces).astype(np.float32, copy=False)
     return packed
 
 
 class ObservationHistory:
-    """Stacks the last `history` frames, oldest first."""
+    """Stacks the last `history` frames, oldest first, newest last.
+
+    Unused slots stay zero (DLS ``HistoryBuffer``). The first real frame is
+    *not* copied into every slot.
+    """
 
     def __init__(self, cfg: ObservationConfig) -> None:
         self.cfg = cfg
@@ -254,13 +301,9 @@ class ObservationHistory:
             self._frames[0] = frame
             self._filled = 1
             return frame.copy()
-        if self._filled == 0:
-            self._frames[:] = frame
-            self._filled = self.cfg.history
-        else:
-            self._frames[:-1] = self._frames[1:]
-            self._frames[-1] = frame
-            self._filled = min(self._filled + 1, self.cfg.history)
+        self._frames[:-1] = self._frames[1:]
+        self._frames[-1] = frame
+        self._filled = min(self._filled + 1, self.cfg.history)
         return self._frames.reshape(-1).copy()
 
     @property

@@ -4,11 +4,11 @@
 /**:
   ros__parameters:
     sim:
-      # Position-actuator gains (MuJoCo <position kp kv>). Hip abduction gets a
-      # lower kp than the pitch joints.
-      actuator_kp_hip: 80.0
-      actuator_kp_leg: 160.0
-      actuator_kv: 6.0
+      # Documented to match mujoco/go2.xml (DLS walking PD). The XML is the
+      # source of truth at runtime.
+      actuator_kp_hip: 20.0
+      actuator_kp_leg: 20.0
+      actuator_kv: 2.0
       # Passive joint model applied to every hinge.
       joint_damping: 0.5
       joint_armature: 0.01
