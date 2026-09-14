@@ -1,22 +1,11 @@
 #include <quadruped_controller.h>
+#include "velocity_slew.h"
 
 namespace
 {
 champ::PhaseGenerator::Time rosTimeToChampTime(const rclcpp::Time & time)
 {
   return time.nanoseconds() / 1000ul;
-}
-
-double slewToward(double current, double target, double max_delta)
-{
-  if (!(max_delta > 0.0) || !std::isfinite(max_delta) || !std::isfinite(target)) {
-    return std::isfinite(target) ? target : current;
-  }
-  const double delta = target - current;
-  if (std::fabs(delta) <= max_delta) {
-    return target;
-  }
-  return current + std::copysign(max_delta, delta);
 }
 }  // namespace
 
@@ -43,6 +32,7 @@ QuadrupedController::QuadrupedController()
   get_parameter("gait.swing_height", gait_config_.swing_height);
   get_parameter("gait.stance_depth", gait_config_.stance_depth);
   get_parameter("gait.stance_duration", gait_config_.stance_duration);
+  get_parameter_or("gait.swing_duration", gait_config_.swing_duration, 0.25f);
   get_parameter("gait.nominal_height", gait_config_.nominal_height);
   get_parameter("gait.knee_orientation", knee_orientation_);
   get_parameter_or("gait.max_linear_acceleration", max_linear_acceleration_, 0.0);
@@ -62,6 +52,8 @@ QuadrupedController::QuadrupedController()
 
   cmd_vel_subscription_ = create_subscription<geometry_msgs::msg::Twist>(
     "cmd_vel", 10, cmd_vel_cb);
+  applied_cmd_vel_publisher_ =
+    create_publisher<geometry_msgs::msg::Twist>("cmd_vel/applied", 10);
 
   cmd_pose_subscription_ = create_subscription<geometry_msgs::msg::Pose>(
     "body_pose", 1,
@@ -107,6 +99,11 @@ QuadrupedController::QuadrupedController()
 void QuadrupedController::controlLoop_()
 {
   slewReqVel_();
+  geometry_msgs::msg::Twist applied;
+  applied.linear.x = req_vel_.linear.x;
+  applied.linear.y = req_vel_.linear.y;
+  applied.angular.z = req_vel_.angular.z;
+  applied_cmd_vel_publisher_->publish(applied);
   float target_joint_positions[12] = {};
   if (has_last_joints_) {
     std::memcpy(target_joint_positions, last_joint_positions_, sizeof(last_joint_positions_));
@@ -144,33 +141,17 @@ void QuadrupedController::controlLoop_()
 
 void QuadrupedController::slewReqVel_()
 {
-  const double dv = max_linear_acceleration_ * loop_dt_;
-  const double dw = max_angular_acceleration_ * loop_dt_;
-  const float vx = static_cast<float>(
-    slewToward(req_vel_.linear.x, cmd_vel_target_.linear.x, dv));
-  const float vy = static_cast<float>(
-    slewToward(req_vel_.linear.y, cmd_vel_target_.linear.y, dv));
-  const float wz = static_cast<float>(
-    slewToward(req_vel_.angular.z, cmd_vel_target_.angular.z, dw));
-
-  // CHAMP resets the gait the instant every velocity is exactly zero and
-  // plants all four feet at the stance position in that same tick. A foot
-  // still in its swing would be slammed down from up to swing_height. Hold the
-  // last (already ramped-down, so tiny) velocity until a foot has just touched
-  // down: at that tick the other pair has barely left the ground, so the reset
-  // moves nothing but a few millimetres. The same applies when a reversal
-  // passes through zero.
-  const bool moving =
-    req_vel_.linear.x != 0.0f || req_vel_.linear.y != 0.0f || req_vel_.angular.z != 0.0f;
-  const bool stopping = vx == 0.0f && vy == 0.0f && wz == 0.0f;
-  const bool feet_down = touchdown_tick_ ||
-    (leg_in_stance_[0] && leg_in_stance_[1] && leg_in_stance_[2] && leg_in_stance_[3]);
-  if (moving && stopping && !feet_down) {
-    return;
-  }
-  req_vel_.linear.x = vx;
-  req_vel_.linear.y = vy;
-  req_vel_.angular.z = wz;
+  champ_gait::PlanarVel current{
+    req_vel_.linear.x, req_vel_.linear.y, req_vel_.angular.z};
+  champ_gait::PlanarVel target{
+    cmd_vel_target_.linear.x, cmd_vel_target_.linear.y, cmd_vel_target_.angular.z};
+  const bool allow_zero = touchdown_tick_ || champ_gait::allStance(leg_in_stance_);
+  const champ_gait::PlanarVel next = champ_gait::slewPlanarVel(
+    current, target, max_linear_acceleration_, max_angular_acceleration_, loop_dt_,
+    allow_zero);
+  req_vel_.linear.x = static_cast<float>(next.vx);
+  req_vel_.linear.y = static_cast<float>(next.vy);
+  req_vel_.angular.z = static_cast<float>(next.wz);
 }
 
 void QuadrupedController::cmdVelCallback_(const geometry_msgs::msg::Twist::SharedPtr msg)

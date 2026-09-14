@@ -18,4 +18,5 @@
       swing_height: 0.10
       stance_depth: 0.0
       stance_duration: 0.30
+      swing_duration: 0.25
       nominal_height: 0.50

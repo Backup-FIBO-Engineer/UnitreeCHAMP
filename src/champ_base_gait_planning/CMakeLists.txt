@@ -167,6 +167,10 @@ if(BUILD_TESTING)
   target_include_directories(verify_body_pose_controller PRIVATE include ${CHAMP_TOOL_INCLUDES})
   target_link_libraries(verify_body_pose_controller ${CHAMP_YAML_CPP_TARGET} tinyxml2::tinyxml2)
 
+  add_executable(measure_gait_continuity tools/measure_gait_continuity.cpp)
+  target_include_directories(measure_gait_continuity PRIVATE include ${CHAMP_TOOL_INCLUDES})
+  target_link_libraries(measure_gait_continuity ${CHAMP_YAML_CPP_TARGET} tinyxml2::tinyxml2)
+
   set(TOOLS ${CMAKE_CURRENT_SOURCE_DIR}/tools)
   file(GLOB ROBOT_DESCRIPTIONS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/urdf
     ${CMAKE_CURRENT_SOURCE_DIR}/urdf/*.urdf
@@ -213,6 +217,9 @@ if(BUILD_TESTING)
           ${config}/${robot}_gait.yaml ${config}/${robot}_joints.yaml ${config}/${robot}_links.yaml
           ${config}/${robot}_body_pose.yaml)
     endif()
+    add_test(NAME measure_gait_continuity_${robot}
+      COMMAND measure_gait_continuity ${robot_urdf}
+        ${config}/${robot}_gait.yaml ${config}/${robot}_joints.yaml ${config}/${robot}_links.yaml)
   endforeach()
   if(EXPANDED_URDFS)
     add_custom_target(expand_robot_urdfs ALL DEPENDS ${EXPANDED_URDFS})

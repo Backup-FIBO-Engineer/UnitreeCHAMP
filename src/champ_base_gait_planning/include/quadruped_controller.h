@@ -37,6 +37,7 @@ private:
   rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr joint_commands_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_publisher_;
   rclcpp::Publisher<champ_msgs::msg::ContactsStamped>::SharedPtr foot_contacts_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr applied_cmd_vel_publisher_;
 
   rclcpp::TimerBase::SharedPtr loop_timer_;
   rclcpp::Clock clock_;

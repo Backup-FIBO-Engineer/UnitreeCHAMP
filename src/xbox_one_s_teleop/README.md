@@ -185,5 +185,15 @@ ros2 topic pub --once /body_pose geometry_msgs/msg/Pose \
    `ros2 run joy joy_enumerate_devices` and pass that Xbox `device_id:=`.
 2. Hold **RB** (dead-man). Sticks do nothing without it.
 3. Check `/xbox_teleop/mode` is `locomotion` (press LB if you are in body pose).
-4. `ros2 topic echo /cmd_vel` while holding RB and pushing the left stick.
-5. `ros2 topic echo /joy` — if right stick is axes 3/4, use `driver:=linux`.
+4. `ros2 topic echo /cmd_vel` while holding RB and pushing the left stick **forward**.
+   CHAMP `+vx` is walk forward. The node logs `invert_vx` at startup and `/cmd_vel`
+   once a second while walking. `quadruped_controller_node` republishes the
+   slewed command as `/cmd_vel/applied`.
+5. If that echo is **negative** while the stick is forward, the mapping yaml
+   sign does not match this `joy_node` path. Do not edit the yaml first — overlay:
+   `./run_xbox_teleop.sh b2 invert_vx:=true` (or `invert_vx:=false` if the yaml
+   already inverts). Same for `invert_vy` / `invert_yaw`.
+6. If `/cmd_vel` is already **positive** and the robot still only walks backward,
+   that is gait/contact (stubbing, phase reset), not the stick sign. Keep this
+   teleop overlay off and use the gait continuity fixes.
+7. `ros2 topic echo /joy` — if right stick is axes 3/4, use `driver:=linux`.

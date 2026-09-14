@@ -51,9 +51,13 @@ class XboxOneSTeleop(Node):
         self.dt = 1.0 / max(rate, 1.0)
         self.create_timer(self.dt, self._on_timer)
 
+        self._last_cmd_log = self.get_clock().now()
         self.get_logger().info(
             'Xbox One S teleop: LB = locomotion ↔ body pose, RB = walk dead-man, '
-            'A = reset body level, B = stop. Start in locomotion.'
+            'A = reset body level, B = stop. Start in locomotion. '
+            f'invert_vx={self._p("invert_vx")} invert_vy={self._p("invert_vy")} '
+            f'invert_yaw={self._p("invert_yaw")} '
+            '(stick-forward must publish /cmd_vel linear.x > 0; overlay invert_vx:=true/false).'
         )
         self._publish_mode()
 
@@ -151,6 +155,13 @@ class XboxOneSTeleop(Node):
                 twist.linear.y = vy
                 twist.angular.z = wz
                 self.cmd_pub.publish(twist)
+                now = self.get_clock().now()
+                if (now - self._last_cmd_log).nanoseconds >= 1_000_000_000:
+                    self._last_cmd_log = now
+                    self.get_logger().info(
+                        f'/cmd_vel vx={vx:.3f} vy={vy:.3f} wz={wz:.3f} '
+                        '(CHAMP +vx is forward; invert_vx:=true/false if this sign is wrong)'
+                    )
             else:
                 self.cmd_pub.publish(Twist())
             return

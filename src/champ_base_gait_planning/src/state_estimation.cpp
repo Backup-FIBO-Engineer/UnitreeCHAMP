@@ -52,6 +52,7 @@ StateEstimation::StateEstimation()
   get_parameter("gait.swing_height", gait_config_.swing_height);
   get_parameter("gait.stance_depth", gait_config_.stance_depth);
   get_parameter("gait.stance_duration", gait_config_.stance_duration);
+  get_parameter_or("gait.swing_duration", gait_config_.swing_duration, 0.25f);
   get_parameter("gait.nominal_height", gait_config_.nominal_height);
   get_parameter("gait.knee_orientation", knee_orientation_);
   get_parameter("urdf", urdf);

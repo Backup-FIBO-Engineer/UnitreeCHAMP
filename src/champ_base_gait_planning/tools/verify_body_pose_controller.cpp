@@ -43,8 +43,10 @@ using champ_body_pose::BodyCommand;
 using champ_body_pose::BodyMeasurement;
 using champ_body_pose::BodyOrientationConfig;
 using champ_body_pose::BodyOrientationController;
+using champ_body_pose::orientationCovariancePresent;
 using champ_body_pose::Quaternion;
 using champ_body_pose::RollPitchYaw;
+using champ_body_pose::rpyFromQuaternion;
 using champ_body_pose::Vector3;
 
 namespace
@@ -680,6 +682,18 @@ int main(int argc, char ** argv)
         std::fabs(cmd.pitch_correction) <= bound,
         "dead-band: error just past the edge gives a proportionally small correction",
         fmt("u %.2e (<= %.2e)", cmd.pitch_correction, bound));
+    }
+
+    {
+      const auto a = rpyFromQuaternion(Quaternion{0.5, 0.5, 0.5, 0.5});
+      const auto b = rpyFromQuaternion(Quaternion{-0.5, -0.5, -0.5, -0.5});
+      check(
+        std::fabs(a.roll - b.roll) < 1e-12 && std::fabs(a.pitch - b.pitch) < 1e-12 &&
+        std::fabs(a.yaw - b.yaw) < 1e-12,
+        "q and -q are the same orientation (do not flip only w)");
+      check(
+        !orientationCovariancePresent(-1.0) && orientationCovariancePresent(0.0),
+        "covariance sentinel -1 means unused; 0 means unknown, not missing");
     }
 
     // IMU loss: the correction slews back to zero and the state is forgotten.

@@ -60,10 +60,25 @@ def _robot_limits(robot: str) -> dict:
     return overlay
 
 
+def _overlay_bool(overlay, key, raw):
+    value = (raw or '').strip().lower()
+    if not value:
+        return
+    if value in ('true', '1', 'yes', 'on'):
+        overlay[key] = True
+    elif value in ('false', '0', 'no', 'off'):
+        overlay[key] = False
+    else:
+        raise RuntimeError(f'{key}:= must be true or false, got {raw!r}')
+
+
 def launch_setup(context):
     pkg = get_package_share_directory('xbox_one_s_teleop')
     robot = LaunchConfiguration('robot').perform(context).strip()
     overlay = _robot_limits(robot)
+    _overlay_bool(overlay, 'invert_vx', LaunchConfiguration('invert_vx').perform(context))
+    _overlay_bool(overlay, 'invert_vy', LaunchConfiguration('invert_vy').perform(context))
+    _overlay_bool(overlay, 'invert_yaw', LaunchConfiguration('invert_yaw').perform(context))
     requested_id = LaunchConfiguration('device_id').perform(context).strip()
     device_name = LaunchConfiguration('device_name').perform(context).strip()
     device_id, sdl_devices = resolve_joy_device_id(requested_id)
@@ -101,7 +116,7 @@ def launch_setup(context):
         ]))
     if overlay:
         actions.append(LogInfo(msg=[
-            f'Xbox teleop limits from champ_base_gait_planning robot={robot}: {overlay}',
+            f'Xbox teleop limits/signs overlay: {overlay}',
         ]))
     elif robot:
         actions.append(LogInfo(msg=[
@@ -156,6 +171,24 @@ def generate_launch_description():
                 'Axis map: auto = linux if SDL name is Xbox 360 (xpadneo), else sdl. '
                 'linux = kernel js order (right stick 3/4). sdl = RX/RY on 2/3.'
             ),
+        ),
+        DeclareLaunchArgument(
+            'invert_vx',
+            default_value='',
+            description=(
+                'Overlay stick-forward sign. Empty keeps the mapping yaml. '
+                'true/false if /cmd_vel linear.x is the wrong sign (robot only walks backward).'
+            ),
+        ),
+        DeclareLaunchArgument(
+            'invert_vy',
+            default_value='',
+            description='Overlay left-stick X sign. Empty keeps the mapping yaml.',
+        ),
+        DeclareLaunchArgument(
+            'invert_yaw',
+            default_value='',
+            description='Overlay right-stick X yaw sign. Empty keeps the mapping yaml.',
         ),
         OpaqueFunction(function=launch_setup),
     ])

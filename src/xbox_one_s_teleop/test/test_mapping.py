@@ -112,6 +112,13 @@ def test_xpadneo_stick_up_is_forward_stick_left_turns_left():
     assert wz == 0.6  # stick left (positive RX) → +yaw = turn left
 
 
+def test_invert_vx_overlay_flips_linux_stick_up_to_backward():
+    vx, _, _ = locomotion_twist(
+        [0.0, 1.0, 0.0, 0.0, 0.0], **{**_LINUX, 'invert_vx': True}
+    )
+    assert vx == -0.50
+
+
 def test_xpadneo_stick_right_strafes_right():
     _, vy, _ = locomotion_twist([ -1.0, 0.0, 0.0, 0.0, 0.0], **_LINUX)
     assert vy == -0.15  # stick right (negative LX) → −vy

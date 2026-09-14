@@ -98,7 +98,13 @@ namespace champ
                 req_vel.angular.z = capVelocities(req_vel.angular.z, -base_->gait_config.max_angular_velocity_z, base_->gait_config.max_angular_velocity_z);
                 
                 float tangential_velocity = req_vel.angular.z * base_->lf.center_to_nominal();
-                float velocity =  sqrtf(pow(req_vel.linear.x, 2) + pow(req_vel.linear.y + tangential_velocity, 2));
+                // Independent components: vy and radius*wz can cancel in a
+                // signed sum even when the twist is not zero, which used to
+                // reset the phase clock and drop a swinging foot.
+                float velocity =  sqrtf(
+                    pow(req_vel.linear.x, 2) +
+                    pow(req_vel.linear.y, 2) +
+                    pow(tangential_velocity, 2));
                 
                 //calculate optimal distance to hop based
                 float step_x = raibertHeuristic(base_->gait_config.stance_duration, req_vel.linear.x);

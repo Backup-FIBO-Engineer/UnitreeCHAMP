@@ -4,6 +4,7 @@
 #   ./run_xbox_teleop.sh b2
 #   ./run_xbox_teleop.sh b2 device_id:=1
 #   ./run_xbox_teleop.sh b2 device_name:="Xbox Wireless Controller"
+#   ./run_xbox_teleop.sh b2 invert_vx:=true   # if stick-forward publishes linear.x < 0
 set -e
 cd "$(dirname "$0")"
 

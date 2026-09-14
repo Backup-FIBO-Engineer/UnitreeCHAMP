@@ -333,6 +333,7 @@ Cautions:
 ```bash
 bash tools/run_offline_checks.sh            # every robot in urdf/
 bash tools/run_offline_checks.sh go2 b2     # selected robots
+bash tools/run_offline_checks.sh --no-mujoco b2
 ```
 
 Per robot this runs:
@@ -341,6 +342,7 @@ Per robot this runs:
 |---|---|
 | `verify_urdf_champ_contract.py --robot R` | `links_map`/`joints_map` chains exist in the URDF, leg joints have `rpy=0`, hip axis `+X`, thigh/calf axes `+Y`, base/imu links exist, limits present, `nominal_height` inside the leg reach |
 | `verify_champ_robot <urdf> <gait> <joints> <links>` (C++) | CHAMP IK/FK round trip, gait at yaml limits, odometry sign/scale, leg symmetry |
+| `measure_gait_continuity <urdf> <gait> <joints> <links>` (C++) | first-swing lift, C1 stance↔swing foot velocity, signed vy+r·wz must not reset the phase clock, node stop gate vs hard-zero slam, +vx stance feet push −X |
 | `validate_mujoco_against_urdf.py --robot R` | MJCF bodies/joints/inertials/limits/actuators vs URDF |
 | `verify_mujoco_physics.py --robot R` | standing FK matches CHAMP, robot settles at `nominal_height`, feet in contact, IMU body |
 | `verify_mujoco_walk.py --robot R [vx]` | replayed CHAMP trot moves forward (>= 55 % of commanded) |
@@ -384,6 +386,7 @@ No code changes. For a robot `<name>`:
 | Topic | Type | Direction |
 |-------|------|-----------|
 | `/cmd_vel` | `geometry_msgs/Twist` | in |
+| `/cmd_vel/applied` | `geometry_msgs/Twist` | out (controller, after clamp + slew; compare with `/cmd_vel`) |
 | `/body_pose` | `geometry_msgs/Pose` | in (desired body pose: position offset, roll/pitch/yaw) |
 | `/body_pose/corrected` | `geometry_msgs/Pose` | out (`body_pose_controller_node`) → in (CHAMP `body_pose`, remapped by the launch) |
 | `/body_pose/measured_rpy`, `/body_pose/correction` | `geometry_msgs/Vector3Stamped` | out (`body_pose_controller_node` diagnostics) |

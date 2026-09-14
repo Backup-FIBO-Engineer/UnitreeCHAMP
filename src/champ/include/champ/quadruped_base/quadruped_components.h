@@ -109,6 +109,7 @@ namespace champ
                 swing_height(0.0f),
                 stance_depth(0.0f),
                 stance_duration(0.0f),
+                swing_duration(0.25f),
                 nominal_height(0.0f)
             {}
             const char * knee_orientation;
@@ -120,6 +121,7 @@ namespace champ
             float swing_height;
             float stance_depth;
             float stance_duration;
+            float swing_duration;
             float nominal_height;
     };
 }

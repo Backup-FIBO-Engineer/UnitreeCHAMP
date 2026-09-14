@@ -145,8 +145,11 @@ public:
 
     initLowCmd();
     lowcmd_pub_ = create_publisher<LowCmd>(lowcmd_topic_, rclcpp::QoS(10));
+    // SensorDataQoS is best-effort/volatile so a LowState publisher that uses
+    // the same profile (unitree_ros2, many IMU drivers) is compatible. A
+    // reliable publisher can still be received.
     lowstate_sub_ = create_subscription<LowState>(
-      lowstate_topic_, rclcpp::QoS(10),
+      lowstate_topic_, rclcpp::SensorDataQoS(),
       std::bind(&UnitreeRos2Bridge::onLowState, this, std::placeholders::_1));
 
     command_sub_ = create_subscription<sensor_msgs::msg::JointState>(
@@ -166,13 +169,18 @@ public:
 
     RCLCPP_WARN(
       get_logger(),
-      "%s Sim2Real bridge: publish %s (motor mode 0x%02X, kp %.0f, kd %.1f, targets %s), "
-      "subscribe %s at %.0f Hz. Sport/control services must stay off. "
+      "%s Sim2Real bridge: publish %s at %.0f Hz (motor mode 0x%02X, kp %.0f, kd %.1f, targets %s), "
+      "subscribe %s (SensorDataQoS). Sport/control services must stay off. "
       "Do not mix with the Sport API.",
-      robot_name_.c_str(), lowcmd_topic_.c_str(), static_cast<unsigned>(motor_mode_),
+      robot_name_.c_str(), lowcmd_topic_.c_str(), publish_rate,
+      static_cast<unsigned>(motor_mode_),
       static_cast<double>(kp_), static_cast<double>(kd_),
       interpolate_commands_ ? "interpolated between commands" : "held between commands",
-      lowstate_topic_.c_str(), publish_rate);
+      lowstate_topic_.c_str());
+    RCLCPP_INFO(
+      get_logger(),
+      "IMU/joint/contact measurements publish only on a new %s (not every LowCmd timer tick)",
+      lowstate_topic_.c_str());
   }
 
 private:
@@ -361,7 +369,9 @@ private:
       measured_dq_ = dq;
       foot_force_ = force;
       last_imu_ = imu;
+      last_measurement_stamp_ = this->now();
       has_lowstate_ = true;
+      measurements_pending_ = true;
     }
   }
 
@@ -440,12 +450,17 @@ private:
     sensor_msgs::msg::Imu imu;
     bool have_state = false;
     bool have_command = false;
+    bool publish_measurements = false;
+    builtin_interfaces::msg::Time measurement_stamp;
     double ramp_t = 1.0;
     bool command_stale = true;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       have_state = has_lowstate_;
       have_command = has_command_;
+      publish_measurements = measurements_pending_;
+      measurements_pending_ = false;
+      measurement_stamp = last_measurement_stamp_;
       measured = measured_q_;
       measured_dq = measured_dq_;
       force = foot_force_;
@@ -475,8 +490,11 @@ private:
       return;
     }
 
-    const builtin_interfaces::msg::Time stamp = this->now();
-    publishMeasurements(stamp, measured, measured_dq, force, imu);
+    // Do not stamp a cached LowState as new: body-pose timeout (and any
+    // other consumer) would never fire if we republished at 500 Hz.
+    if (publish_measurements) {
+      publishMeasurements(measurement_stamp, measured, measured_dq, force, imu);
+    }
 
     const float blend = static_cast<float>(std::min(1.0, std::max(0.0, ramp_t)));
     const float kp = kp_;
@@ -564,6 +582,8 @@ private:
   sensor_msgs::msg::Imu last_imu_;
   bool has_command_{false};
   bool has_lowstate_{false};
+  bool measurements_pending_{false};
+  builtin_interfaces::msg::Time last_measurement_stamp_{};
   bool ramp_started_{false};
   std::chrono::steady_clock::time_point last_command_monotonic_{};
   std::chrono::steady_clock::time_point ramp_start_monotonic_{};

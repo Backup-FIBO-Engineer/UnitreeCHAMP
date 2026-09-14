@@ -53,7 +53,7 @@ def main() -> int:
     failures += result('links_map.base is the URDF root link', base_link == urdf.root, f'{base_link!r} vs {urdf.root!r}')
     failures += result('links_map.imu is a URDF link', imu_link in urdf.links, imu_link)
     for key in ('knee_orientation', 'max_linear_velocity_x', 'max_linear_velocity_y',
-                'max_angular_velocity_z', 'swing_height', 'stance_duration', 'nominal_height'):
+                'max_angular_velocity_z', 'swing_height', 'stance_duration', 'swing_duration', 'nominal_height'):
         failures += result(f'gait.{key} present', key in gait)
     failures += result('gait.knee_orientation is ">>" (Unitree-style knees)', gait.get('knee_orientation') == '>>', str(gait.get('knee_orientation')))
 

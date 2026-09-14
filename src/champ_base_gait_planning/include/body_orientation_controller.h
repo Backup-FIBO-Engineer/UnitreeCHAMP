@@ -135,6 +135,13 @@ inline Quaternion quaternionFromRpy(double roll, double pitch, double yaw)
     cr * cp * sy - sr * sp * cy};
 }
 
+// sensor_msgs/Imu: -1 in the first covariance element means that field is
+// unused. 0 means "unknown covariance", which is not a missing orientation.
+inline bool orientationCovariancePresent(double covariance_xx)
+{
+  return covariance_xx != -1.0;
+}
+
 // Same convention as tf2::Matrix3x3::getRPY (solution 1), which the CHAMP
 // quadruped controller uses on the /body_pose quaternion.
 inline RollPitchYaw rpyFromQuaternion(const Quaternion & q_in)

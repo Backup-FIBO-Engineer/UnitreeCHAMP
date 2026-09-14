@@ -146,6 +146,10 @@ champ_body_pose::Quaternion BodyPoseController::loadImuMount()
       throw std::invalid_argument(
               std::string(kNodeName) + " parameter 'body_pose.imu_mount_rpy' needs [roll, pitch, yaw]");
     }
+    if (!std::isfinite(rpy[0]) || !std::isfinite(rpy[1]) || !std::isfinite(rpy[2])) {
+      throw std::invalid_argument(
+              std::string(kNodeName) + " parameter 'body_pose.imu_mount_rpy' must be finite");
+    }
     RCLCPP_INFO(
       get_logger(), "IMU mount from body_pose.imu_mount_rpy: %.4f %.4f %.4f rad",
       rpy[0], rpy[1], rpy[2]);
@@ -239,6 +243,15 @@ void BodyPoseController::imuCallback(sensor_msgs::msg::Imu::ConstSharedPtr msg)
     RCLCPP_WARN_THROTTLE(
       get_logger(), *get_clock(), 5000,
       "IMU on %s has no orientation quaternion; the body pose loop needs an orientation-fused IMU",
+      imu_topic_.c_str());
+    return;
+  }
+  if (!msg->orientation_covariance.empty() &&
+    !champ_body_pose::orientationCovariancePresent(msg->orientation_covariance[0]))
+  {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "IMU on %s sets orientation_covariance[0] = -1 (no orientation); ignored",
       imu_topic_.c_str());
     return;
   }

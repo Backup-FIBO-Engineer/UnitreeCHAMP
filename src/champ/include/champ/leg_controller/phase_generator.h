@@ -62,7 +62,11 @@ namespace champ
 
             void run(float target_velocity, float /*step_length*/, Time time = now())
             {
-                const float swing_phase_period = 0.25f * SECONDS_TO_MICROS;
+                float swing_phase_period = base_->gait_config.swing_duration * SECONDS_TO_MICROS;
+                if(!(swing_phase_period > 0.0f))
+                {
+                    swing_phase_period = 0.25f * SECONDS_TO_MICROS;
+                }
                 const float stance_phase_period =  base_->gait_config.stance_duration * SECONDS_TO_MICROS;
                 const float stride_period = stance_phase_period + swing_phase_period;
 
