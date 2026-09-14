@@ -130,6 +130,7 @@ public:
       *this, "contact_force_threshold", "/lowstate foot_force level that counts as contact.");
     command_timeout_sec_ = numberOr(*this, "command_timeout_sec", 0.5);
     ramp_sec_ = std::max(0.0, numberOr(*this, "ramp_sec", 2.0));
+    interpolate_commands_ = boolOr(*this, "interpolate_commands", true);
     lowcmd_topic_ = stringOr(*this, "lowcmd_topic", "/lowcmd");
     lowstate_topic_ = stringOr(*this, "lowstate_topic", "/lowstate");
 
@@ -165,11 +166,13 @@ public:
 
     RCLCPP_WARN(
       get_logger(),
-      "%s Sim2Real bridge: publish %s (motor mode 0x%02X, kp %.0f, kd %.1f), "
+      "%s Sim2Real bridge: publish %s (motor mode 0x%02X, kp %.0f, kd %.1f, targets %s), "
       "subscribe %s at %.0f Hz. Sport/control services must stay off. "
       "Do not mix with the Sport API.",
       robot_name_.c_str(), lowcmd_topic_.c_str(), static_cast<unsigned>(motor_mode_),
-      static_cast<double>(kp_), static_cast<double>(kd_), lowstate_topic_.c_str(), publish_rate);
+      static_cast<double>(kp_), static_cast<double>(kd_),
+      interpolate_commands_ ? "interpolated between commands" : "held between commands",
+      lowstate_topic_.c_str(), publish_rate);
   }
 
 private:
@@ -392,9 +395,39 @@ private:
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+    const auto now = std::chrono::steady_clock::now();
+    if (has_command_) {
+      // Interpolation restarts from the target the motors were being sent at
+      // this instant, so a command arriving early never causes a step.
+      const double frac = interpolationFraction(now);
+      for (size_t i = 0; i < kUnitreeMotorCount; ++i) {
+        prev_command_q_[i] += (command_q_[i] - prev_command_q_[i]) * frac;
+      }
+      command_period_ = std::min(
+        0.1, std::max(
+          0.001, std::chrono::duration<double>(now - last_command_monotonic_).count()));
+    } else {
+      prev_command_q_ = q;
+      command_period_ = 0.0;
+    }
     command_q_ = q;
     has_command_ = true;
-    last_command_monotonic_ = std::chrono::steady_clock::now();
+    last_command_monotonic_ = now;
+  }
+
+  // 0 -> 1 over one command period after the latest command (mutex_ held).
+  // CHAMP plans at 200 Hz while the motors are served at publish_rate (500 Hz):
+  // sending each 5 ms target three times is a staircase that a stiff joint PD
+  // (kp 1000 on B2) turns into a torque step every 5 ms, audible as a buzz and
+  // felt as harshness. Interpolating linearly between the last two targets
+  // costs one command period of latency and gives a continuous target.
+  double interpolationFraction(std::chrono::steady_clock::time_point now) const
+  {
+    if (!interpolate_commands_ || command_period_ <= 0.0) {
+      return 1.0;
+    }
+    const double elapsed = std::chrono::duration<double>(now - last_command_monotonic_).count();
+    return std::min(1.0, std::max(0.0, elapsed / command_period_));
   }
 
   void onTimer()
@@ -415,10 +448,13 @@ private:
       have_command = has_command_;
       measured = measured_q_;
       measured_dq = measured_dq_;
-      command = command_q_;
       force = foot_force_;
       imu = last_imu_;
       const auto now = std::chrono::steady_clock::now();
+      const double frac = interpolationFraction(now);
+      for (size_t i = 0; i < kUnitreeMotorCount; ++i) {
+        command[i] = prev_command_q_[i] + (command_q_[i] - prev_command_q_[i]) * frac;
+      }
       if (have_state && have_command && !ramp_started_) {
         ramp_started_ = true;
         ramp_start_monotonic_ = now;
@@ -518,6 +554,9 @@ private:
 
   std::mutex mutex_;
   std::array<double, kUnitreeMotorCount> command_q_{};
+  std::array<double, kUnitreeMotorCount> prev_command_q_{};
+  double command_period_{0.0};
+  bool interpolate_commands_{true};
   std::array<double, kUnitreeMotorCount> start_q_{};
   std::array<double, kUnitreeMotorCount> measured_q_{};
   std::array<double, kUnitreeMotorCount> measured_dq_{};

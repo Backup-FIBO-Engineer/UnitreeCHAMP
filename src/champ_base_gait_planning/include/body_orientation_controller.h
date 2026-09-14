@@ -7,7 +7,8 @@
 // correction to the pose CHAMP receives:
 //
 //   command = desired + u,   u = kp * e + ki * integral(e) - kd * body_rate,
-//   e = desired - measured (low-pass filtered, dead-banded).
+//   e = desired - measured (low-pass filtered, then a continuous dead-band:
+//   zero inside +-deadband, |e| - deadband beyond it).
 //
 // The integral term removes the steady-state error a proportional term alone
 // would leave (the plant is roughly unit gain: a slope of theta gives a body
@@ -158,7 +159,7 @@ struct AxisGains
   double ki{0.0};                // rad/s of correction per rad of error
   double kd{0.0};                // rad of correction per rad/s of body rate
   double filter_cutoff_hz{0.0};  // first-order low-pass on angle and rate, <= 0 = off
-  double deadband{0.0};          // rad, |error| below it is treated as zero
+  double deadband{0.0};          // rad, |error| inside it is zero, beyond it the band is subtracted
   double max_correction{0.0};    // rad, |u| bound and integral anti-windup clamp
   double max_rate{0.0};          // rad/s, slew limit of u, <= 0 = none
   double max_error{0.0};         // rad, |error| above it resets u (not standing), <= 0 = off
@@ -231,9 +232,12 @@ public:
       u_ = slew(0.0, dt);
       return u_;
     }
-    if (std::fabs(error) < gains_.deadband) {
-      error = 0.0;
-    }
+    // Continuous dead-band: zero inside the band, the band width subtracted
+    // outside it. A hard band (error itself outside, zero inside) steps the P
+    // term by kp * deadband at the edge; the integral parks the error right
+    // there, and the loop then chatters across the edge, which is audible as
+    // motor ticking on a stiff joint PD.
+    error = std::copysign(std::max(0.0, std::fabs(error) - gains_.deadband), error);
     integral_ = clampAbs(integral_ + gains_.ki * error * dt, gains_.max_correction);
     const double target = clampAbs(
       gains_.kp * error + integral_ - gains_.kd * rate_f_, gains_.max_correction);

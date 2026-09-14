@@ -17,7 +17,7 @@
       ki: 2.0
       kd: 0.02
       filter_cutoff_hz: 5.0      # low-pass on the IMU roll/pitch (foot impacts while trotting)
-      deadband: 0.005            # ~0.3 deg
+      deadband: 0.005            # ~0.3 deg; zero inside, |e|-deadband beyond it (no step at the edge)
       max_correction: 0.15       # closed-loop share of the command (and integral clamp)
       max_rate: 0.5              # slew of the correction
       desired_rate: 0.5          # slew of the user's desired roll/pitch/yaw (no steps to the legs)

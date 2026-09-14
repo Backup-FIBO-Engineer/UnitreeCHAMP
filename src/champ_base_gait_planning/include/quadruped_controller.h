@@ -64,6 +64,8 @@ private:
   bool in_gazebo_{false};
   bool has_last_joints_{false};
   float last_joint_positions_[12]{};
+  bool leg_in_stance_[4]{true, true, true, true};
+  bool touchdown_tick_{false};
 
   void controlLoop_();
   void slewReqVel_();

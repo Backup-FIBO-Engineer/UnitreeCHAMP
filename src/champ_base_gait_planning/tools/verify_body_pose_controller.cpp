@@ -668,6 +668,20 @@ int main(int argc, char ** argv)
         fmt("u %.2e", cmd.pitch_correction));
     }
 
+    // Dead-band edge: the correction is continuous across it (no kp * deadband
+    // step that a stiff joint PD turns into a tick every time the error crosses).
+    {
+      BodyOrientationController ctrl(params.config);
+      BodyMeasurement m;
+      m.pitch = -1.01 * g.deadband;
+      const BodyCommand cmd = ctrl.update(RollPitchYaw{}, m, dt);
+      const double bound = g.kp * 0.01 * g.deadband + g.ki * 0.01 * g.deadband * dt + 1e-12;
+      check(
+        std::fabs(cmd.pitch_correction) <= bound,
+        "dead-band: error just past the edge gives a proportionally small correction",
+        fmt("u %.2e (<= %.2e)", cmd.pitch_correction, bound));
+    }
+
     // IMU loss: the correction slews back to zero and the state is forgotten.
     // (Constant measurement without a plant: the integral winds to the clamp first.)
     {

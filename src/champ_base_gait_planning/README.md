@@ -34,7 +34,16 @@ python3 tools/champ_robot_files.py list      # robots found in urdf/
 ## Pipeline
 
 1. **cmd_vel → joints**: `quadruped_controller_node`
-   - Gait planning (`LegController::velocityCommand`)
+   - `/cmd_vel` is clamped to the gait yaml maxima and ramped at
+     `gait.max_linear_acceleration` / `max_angular_acceleration` (0 = step)
+   - Gait planning (`LegController::velocityCommand`): trot, LF/RH against
+     RF/LH, `stance_duration` of stance then a 0.25 s swing per leg (the two
+     need not be equal; a longer stance adds a four-leg support window)
+   - Start and stop never step a foot: the stride clock starts where RF/LH
+     leave stance (every foot on the ground, the first swing rises from
+     z = 0), and the node lets the velocity reach exactly zero — which resets
+     CHAMP's gait and plants all feet at once — only on a tick where a foot has
+     just touched down (or all four are in stance), never with a foot mid-swing
    - Inverse kinematics (`Kinematics::inverse`)
    - Publishes `/joint_states`, `/foot_contacts`
 
@@ -238,8 +247,12 @@ motion service still active (it retries every second). It gives up and
 continues only after 6 CheckMode **timeouts** (robot not on the graph); a
 non-timeout error is still an answer, so LowCmd stays off. Then it holds the
 measured pose and ramps to the CHAMP targets over `ramp_sec` at
-`publish_rate`. If CHAMP commands stop for `command_timeout_sec`, the last
-pose is held with extra damping. Never mix this with the Sport API.
+`publish_rate`. CHAMP plans at 200 Hz and the motors are served at 500 Hz:
+the bridge interpolates linearly between the last two CHAMP targets
+(`interpolate_commands`, default true; one 5 ms period of latency) instead of
+repeating each target, so a stiff joint PD does not get a torque step every
+5 ms. If CHAMP commands stop for `command_timeout_sec`, the last pose is held
+with extra damping. Never mix this with the Sport API.
 
 Quick checks on the robot network: `ros2 topic hz /lowstate` (~500 Hz) and
 `ros2 topic echo /api/motion_switcher/response --once` after a `ReleaseMode`.

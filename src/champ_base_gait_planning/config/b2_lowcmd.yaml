@@ -20,6 +20,9 @@
     motor_mode: 10  # 0x0A PMSM servo
     command_timeout_sec: 0.5
     ramp_sec: 3.0
+    # CHAMP targets arrive at 200 Hz; interpolate them at publish_rate instead
+    # of repeating each one (a 5 ms staircase is a torque tick at kp 1000).
+    interpolate_commands: true
     # /lowstate foot_force is a raw sensor value; B2 feet read higher than Go2.
     contact_force_threshold: 40.0
     # motion_switcher ReleaseMode over /api/motion_switcher/{request,response}.

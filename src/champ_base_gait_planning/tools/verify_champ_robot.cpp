@@ -511,6 +511,9 @@ int main(int argc, char ** argv)
     int limit_fail = 0;
     int ticks = 0;
     int trot_ok = 0;
+    float first_swing_lift = -1.0f;
+    geometry::Transformation stand_ref[4];
+    walk_body.poseCommand(stand_ref, req_pose);
     const int kTicks = 400;  // 2 s at 200 Hz
     for (int t = 0; t < kTicks; ++t) {
       const champ::PhaseGenerator::Time now_us = static_cast<champ::PhaseGenerator::Time>(t) * 5000ul;
@@ -521,6 +524,16 @@ int main(int argc, char ** argv)
       cmd.linear.y = c.vy;
       cmd.angular.z = c.wz;
       walk_legs.velocityCommand(feet, cmd, now_us);
+
+      if (first_swing_lift < 0.0f) {
+        for (int i = 0; i < 4; ++i) {
+          if (!walk_base.legs[i]->gait_phase()) {
+            // Standing foot Z is below the base; swing adds a positive lift.
+            first_swing_lift = std::max(0.0f, feet[i].Z() - stand_ref[i].Z());
+            break;
+          }
+        }
+      }
 
       for (int i = 0; i < 4; ++i) {
         if (hypot3(feet[i].X(), feet[i].Y(), feet[i].Z()) > planar_reach(*walk_base.legs[i]) + 0.02f) {
@@ -556,6 +569,10 @@ int main(int argc, char ** argv)
       ik_fail, ticks, reach_fail, limit_fail, trot_ok, ticks);
     check(ik_fail == 0 && reach_fail == 0, c.name, detail);
     check(trot_ok > ticks / 2, c.name + " trot LF-RH / RF-LH", detail);
+    check(
+      first_swing_lift >= 0.0f && first_swing_lift < 0.5f * gait.swing_height + 0.005f,
+      c.name + " first swing leaves the ground (not mid-air at swing_height)",
+      fmt("first lift %.4f m, swing_height %.4f m", first_swing_lift, gait.swing_height));
     if (limits.numeric) {
       check(limit_fail == 0, c.name + " inside URDF joint limits", detail);
     }

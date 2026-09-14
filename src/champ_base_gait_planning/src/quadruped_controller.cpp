@@ -116,6 +116,12 @@ void QuadrupedController::controlLoop_()
   body_controller_.poseCommand(target_foot_positions, req_pose_);
   leg_controller_.velocityCommand(
     target_foot_positions, req_vel_, rosTimeToChampTime(clock_.now()));
+  touchdown_tick_ = false;
+  for (size_t i = 0; i < 4; ++i) {
+    const bool stance = base_.legs[i]->gait_phase();
+    touchdown_tick_ = touchdown_tick_ || (stance && !leg_in_stance_[i]);
+    leg_in_stance_[i] = stance;
+  }
   kinematics_.inverse(target_joint_positions, target_foot_positions);
 
   bool finite = true;
@@ -140,12 +146,31 @@ void QuadrupedController::slewReqVel_()
 {
   const double dv = max_linear_acceleration_ * loop_dt_;
   const double dw = max_angular_acceleration_ * loop_dt_;
-  req_vel_.linear.x = static_cast<float>(
+  const float vx = static_cast<float>(
     slewToward(req_vel_.linear.x, cmd_vel_target_.linear.x, dv));
-  req_vel_.linear.y = static_cast<float>(
+  const float vy = static_cast<float>(
     slewToward(req_vel_.linear.y, cmd_vel_target_.linear.y, dv));
-  req_vel_.angular.z = static_cast<float>(
+  const float wz = static_cast<float>(
     slewToward(req_vel_.angular.z, cmd_vel_target_.angular.z, dw));
+
+  // CHAMP resets the gait the instant every velocity is exactly zero and
+  // plants all four feet at the stance position in that same tick. A foot
+  // still in its swing would be slammed down from up to swing_height. Hold the
+  // last (already ramped-down, so tiny) velocity until a foot has just touched
+  // down: at that tick the other pair has barely left the ground, so the reset
+  // moves nothing but a few millimetres. The same applies when a reversal
+  // passes through zero.
+  const bool moving =
+    req_vel_.linear.x != 0.0f || req_vel_.linear.y != 0.0f || req_vel_.angular.z != 0.0f;
+  const bool stopping = vx == 0.0f && vy == 0.0f && wz == 0.0f;
+  const bool feet_down = touchdown_tick_ ||
+    (leg_in_stance_[0] && leg_in_stance_[1] && leg_in_stance_[2] && leg_in_stance_[3]);
+  if (moving && stopping && !feet_down) {
+    return;
+  }
+  req_vel_.linear.x = vx;
+  req_vel_.linear.y = vy;
+  req_vel_.angular.z = wz;
 }
 
 void QuadrupedController::cmdVelCallback_(const geometry_msgs::msg::Twist::SharedPtr msg)
