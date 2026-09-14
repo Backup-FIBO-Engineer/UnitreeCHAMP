@@ -6,6 +6,18 @@ champ::PhaseGenerator::Time rosTimeToChampTime(const rclcpp::Time & time)
 {
   return time.nanoseconds() / 1000ul;
 }
+
+double slewToward(double current, double target, double max_delta)
+{
+  if (!(max_delta > 0.0) || !std::isfinite(max_delta) || !std::isfinite(target)) {
+    return std::isfinite(target) ? target : current;
+  }
+  const double delta = target - current;
+  if (std::fabs(delta) <= max_delta) {
+    return target;
+  }
+  return current + std::copysign(max_delta, delta);
+}
 }  // namespace
 
 QuadrupedController::QuadrupedController()
@@ -33,6 +45,8 @@ QuadrupedController::QuadrupedController()
   get_parameter("gait.stance_duration", gait_config_.stance_duration);
   get_parameter("gait.nominal_height", gait_config_.nominal_height);
   get_parameter("gait.knee_orientation", knee_orientation_);
+  get_parameter_or("gait.max_linear_acceleration", max_linear_acceleration_, 0.0);
+  get_parameter_or("gait.max_angular_acceleration", max_angular_acceleration_, 0.0);
   get_parameter("publish_foot_contacts", publish_foot_contacts_);
   get_parameter("publish_joint_states", publish_joint_states_);
   get_parameter("publish_joint_control", publish_joint_control_);
@@ -40,6 +54,7 @@ QuadrupedController::QuadrupedController()
   get_parameter("joint_controller_topic", joint_control_topic);
   get_parameter("loop_rate", loop_rate);
   get_parameter("urdf", urdf);
+  loop_dt_ = 1.0 / std::max(1.0, loop_rate);
 
   auto cmd_vel_cb = [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
       cmdVelCallback_(msg);
@@ -79,11 +94,19 @@ QuadrupedController::QuadrupedController()
 
   req_pose_.position.z = gait_config_.nominal_height;
 
-  RCLCPP_INFO(get_logger(), "Quadruped controller ready (%zu joints)", joint_names_.size());
+  if (max_linear_acceleration_ > 0.0 || max_angular_acceleration_ > 0.0) {
+    RCLCPP_INFO(
+      get_logger(),
+      "Quadruped controller ready (%zu joints); cmd_vel slew %.2f m/s^2, %.2f rad/s^2",
+      joint_names_.size(), max_linear_acceleration_, max_angular_acceleration_);
+  } else {
+    RCLCPP_INFO(get_logger(), "Quadruped controller ready (%zu joints)", joint_names_.size());
+  }
 }
 
 void QuadrupedController::controlLoop_()
 {
+  slewReqVel_();
   float target_joint_positions[12] = {};
   if (has_last_joints_) {
     std::memcpy(target_joint_positions, last_joint_positions_, sizeof(last_joint_positions_));
@@ -113,6 +136,18 @@ void QuadrupedController::controlLoop_()
   publishJoints_(target_joint_positions);
 }
 
+void QuadrupedController::slewReqVel_()
+{
+  const double dv = max_linear_acceleration_ * loop_dt_;
+  const double dw = max_angular_acceleration_ * loop_dt_;
+  req_vel_.linear.x = static_cast<float>(
+    slewToward(req_vel_.linear.x, cmd_vel_target_.linear.x, dv));
+  req_vel_.linear.y = static_cast<float>(
+    slewToward(req_vel_.linear.y, cmd_vel_target_.linear.y, dv));
+  req_vel_.angular.z = static_cast<float>(
+    slewToward(req_vel_.angular.z, cmd_vel_target_.angular.z, dw));
+}
+
 void QuadrupedController::cmdVelCallback_(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
   const double max_x = gait_config_.max_linear_velocity_x;
@@ -128,9 +163,9 @@ void QuadrupedController::cmdVelCallback_(const geometry_msgs::msg::Twist::Share
       "CHAMP clamps it. Lower the teleop speed (z/x) to gait.max_linear_velocity_* of this robot.",
       msg->linear.x, msg->linear.y, msg->angular.z, max_x, max_y, max_z);
   }
-  req_vel_.linear.x = msg->linear.x;
-  req_vel_.linear.y = msg->linear.y;
-  req_vel_.angular.z = msg->angular.z;
+  cmd_vel_target_.linear.x = static_cast<float>(msg->linear.x);
+  cmd_vel_target_.linear.y = static_cast<float>(msg->linear.y);
+  cmd_vel_target_.angular.z = static_cast<float>(msg->angular.z);
 }
 
 void QuadrupedController::cmdPoseCallback_(const geometry_msgs::msg::Pose::SharedPtr msg)

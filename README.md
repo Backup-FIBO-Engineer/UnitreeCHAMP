@@ -87,7 +87,8 @@ ros2 launch champ_base_gait_planning mujoco_sim.launch.py robot:=b2     # or rob
 ```
 
 Teleop: keep the speed below `gait.max_linear_velocity_x` of the robot
-(`config/<robot>_gait.yaml`); CHAMP clamps anything above it.
+(`config/<robot>_gait.yaml`); CHAMP clamps anything above it. Stick/keyboard
+steps are ramped at `gait.max_linear_acceleration` (B2 0.30 m/s²).
 
 Xbox One S (Model 1708, Bluetooth) — locomotion `/cmd_vel` and body-pose
 mode on the same pad (`src/xbox_one_s_teleop`):

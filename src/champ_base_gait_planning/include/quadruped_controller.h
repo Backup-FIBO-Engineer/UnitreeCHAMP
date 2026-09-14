@@ -41,9 +41,13 @@ private:
   rclcpp::Clock clock_;
 
   champ::Velocities req_vel_;
+  champ::Velocities cmd_vel_target_;
   champ::Pose req_pose_;
 
   champ::GaitConfig gait_config_;
+  double max_linear_acceleration_{0.0};
+  double max_angular_acceleration_{0.0};
+  double loop_dt_{0.005};
 
   champ::QuadrupedBase base_;
   champ::BodyController body_controller_;
@@ -61,6 +65,7 @@ private:
   float last_joint_positions_[12]{};
 
   void controlLoop_();
+  void slewReqVel_();
   void publishJoints_(float target_joints[12]);
   void publishFootContacts_();
   void cmdVelCallback_(const geometry_msgs::msg::Twist::SharedPtr msg);

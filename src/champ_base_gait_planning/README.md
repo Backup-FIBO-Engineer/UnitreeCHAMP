@@ -12,7 +12,7 @@ described only by files named after it inside this package:
 | File | Required | Content |
 |---|---|---|
 | `urdf/<robot>.urdf` or `urdf/<robot>.xacro` | yes | kinematics, inertials, joint limits / efforts / velocities |
-| `config/<robot>_gait.yaml` | yes | CHAMP `gait.*` (nominal_height, swing_height, stance_duration, max velocities, …) |
+| `config/<robot>_gait.yaml` | yes | CHAMP `gait.*` (nominal_height, swing_height, stance_duration, max velocities, cmd_vel acceleration slew, …) |
 | `config/<robot>_joints.yaml` | yes | CHAMP `joints_map.{left_front,right_front,left_hind,right_hind}` (hip, upper, lower joint names) |
 | `config/<robot>_links.yaml` | yes | CHAMP `links_map.*` leg chains + `links_map.base` + `links_map.imu` |
 | `config/<robot>_sim.yaml` | MuJoCo | `sim.*` simulator tuning (actuator gains, joint damping, friction, spawn clearance, velocity limit; foot geom/site names for hand-written models) |
@@ -299,7 +299,9 @@ Cautions:
   (Go2: 1.0 rad/s). Do not raise them on the real robot before watching the
   ramp in MuJoCo (`/body_pose/corrected`).
 * Keep `/body_pose` `position.z` at 0 while using large tilts (same leg
-  reach). Keep teleop speed below `gait.max_linear_velocity_x`.
+  reach). Keep teleop speed below `gait.max_linear_velocity_x`. `/cmd_vel`
+  is ramped at `gait.max_linear_acceleration` / `max_angular_acceleration`
+  (B2 0.30 m/s² / 0.40 rad/s²) so a full stick is not a velocity step.
 * If `body_pose_controller_node` dies, CHAMP keeps the last
   `/body_pose/corrected` (a frozen correction, not a jump). Restart the
   launch; or run `body_pose_control:=false` to go back to plain CHAMP.
