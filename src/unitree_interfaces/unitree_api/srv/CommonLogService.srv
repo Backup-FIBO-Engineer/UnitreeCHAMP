@@ -1,0 +1,5 @@
+bool is_start
+float64 sampling_time
+---
+bool success
+string message
