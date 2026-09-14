@@ -27,17 +27,28 @@ quit
 ```
 
 `bluetoothctl info` `Connected: yes` is not enough. Stock `xpad` is USB.
-Model 1708 over Bluetooth is HID (`Modalias: usb:v045Ep02FD...`) until
-[xpadneo](https://github.com/atar-axis/xpadneo) creates a real joystick.
-Without it, `joy_enumerate_devices` often lists only RustDesk.
+Model 1708 over Bluetooth is HID (`Modalias: usb:v045Ep02FD...`) until the
+kernel creates an input node. `/dev/input/js0` is **not** proof of an Xbox:
+it is often `mouce-library-fake-mouse` or RustDesk. The Xbox must appear in
+`/proc/bus/input/devices` with `Handlers=... jsN`.
 
 ```bash
-# Xbox should show Handlers=... jsN  (not only eventN)
-grep -A25 -iE 'xbox|microsoft|045e|rustdesk' /proc/bus/input/devices
+grep -A25 -iE 'xbox|microsoft|045e|rustdesk|mouce' /proc/bus/input/devices
 ls -l /dev/input/js* /dev/input/by-id
 ```
 
-If there is no Xbox `js` node:
+If Bluetooth is connected but there is **no Xbox input device at all**:
+
+```bash
+sudo modprobe hidp
+echo 1 | sudo tee /sys/module/bluetooth/parameters/disable_ertm
+# persist: echo 'options bluetooth disable_ertm=1' | sudo tee /etc/modprobe.d/xbox-bt.conf
+bluetoothctl disconnect AA:BB:CC:DD:EE:FF
+# power-cycle the pad, then:
+bluetoothctl connect AA:BB:CC:DD:EE:FF
+```
+
+Then install [xpadneo](https://github.com/atar-axis/xpadneo) so the HID becomes a joystick:
 
 ```bash
 sudo apt install dkms git linux-headers-$(uname -r)
@@ -48,8 +59,7 @@ ros2 run joy joy_enumerate_devices   # need a line named Xbox
 ```
 
 ```bash
-ls /dev/input/js*
-jstest /dev/input/js0    # sudo apt install joystick; must move with the Xbox
+jstest /dev/input/js1    # sudo apt install joystick; pick the jsN that is Xbox, not fake-mouse
 ```
 
 You need to be in the `input` group: `sudo gpasswd -a $USER input` then log out
