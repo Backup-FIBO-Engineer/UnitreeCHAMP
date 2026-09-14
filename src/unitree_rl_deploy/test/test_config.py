@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import pytest
 import yaml
 
 from unitree_rl_deploy.config import DeployConfig, parse_ros_bool
@@ -27,14 +28,18 @@ def _mapped_joint_names(robot: str) -> list:
     return names
 
 
-def test_go2_and_b2_yaml_match_urdf_and_45_obs():
+def test_go2_and_b2_yaml_match_urdf_and_48_obs():
     for robot in ('go2', 'b2'):
         cfg = DeployConfig.from_yaml(PKG / 'config' / f'{robot}_rl.yaml')
         urdf_joints = _urdf_revolute(PKG / 'urdf' / f'{robot}.urdf')
         mapped = set(_mapped_joint_names(robot))
         assert cfg.num_actions == 12
-        assert cfg.num_obs == 45
-        assert cfg.observation.single_size == 45
+        assert cfg.num_obs == 48
+        assert cfg.observation.single_size == 48
+        assert cfg.observation.terms[0] == 'lin_vel'
+        assert cfg.observation.needs_lin_vel is True
+        assert cfg.odom_topic == 'odom/ground_truth'
+        assert cfg.lin_vel_frame == 'body'
         for name in cfg.joint_names:
             assert name in urdf_joints, f'{robot}: {name} missing from URDF'
             assert name in mapped, f'{robot}: {name} missing from joints_map'
@@ -75,18 +80,39 @@ def test_default_angles_inside_urdf_limits_and_mjcf_has_joints():
         assert links_map['base'] in body_names
 
 
-def test_gym_lin_vel_layout_is_48():
+def test_gym_lin_vel_layout_is_default_48():
     cfg = DeployConfig.from_yaml(PKG / 'config' / 'go2_rl.yaml')
+    assert cfg.num_obs == 48
+    assert cfg.observation.terms == [
+        'lin_vel', 'ang_vel', 'gravity', 'command', 'dof_pos', 'dof_vel', 'action']
+    assert cfg.observation.lin_vel_scale == 2.0
+    assert cfg.cmd_timeout_sec == 0.5
+    assert cfg.lin_vel_timeout_sec == 0.2
     data = yaml.safe_load((PKG / 'config' / 'go2_rl.yaml').read_text())
-    params = data['/**']['ros__parameters']
-    params = dict(params)
+    params = dict(data['/**']['ros__parameters'])
     params['observation'] = dict(params['observation'])
     params['observation']['terms'] = [
-        'lin_vel', 'ang_vel', 'gravity', 'command', 'dof_pos', 'dof_vel', 'action']
-    gym = DeployConfig.from_mapping(params)
-    assert gym.num_obs == 48
-    assert cfg.num_obs == 45
-    assert cfg.cmd_timeout_sec == 0.5
+        'ang_vel', 'gravity', 'command', 'dof_pos', 'dof_vel', 'action']
+    without_lin_vel = DeployConfig.from_mapping(params)
+    assert without_lin_vel.num_obs == 45
+    assert without_lin_vel.observation.needs_lin_vel is False
+
+
+def test_lin_vel_without_velocity_source_is_rejected():
+    data = yaml.safe_load((PKG / 'config' / 'go2_rl.yaml').read_text())
+    params = dict(data['/**']['ros__parameters'])
+    params['odom_topic'] = ''
+    params['base_state_topic'] = ''
+    with pytest.raises(ValueError, match='lin_vel'):
+        DeployConfig.from_mapping(params)
+
+
+def test_invalid_lin_vel_frame_is_rejected():
+    data = yaml.safe_load((PKG / 'config' / 'go2_rl.yaml').read_text())
+    params = dict(data['/**']['ros__parameters'])
+    params['lin_vel_frame'] = 'imu'
+    with pytest.raises(ValueError, match='lin_vel_frame'):
+        DeployConfig.from_mapping(params)
 
 
 def test_parse_ros_bool_does_not_treat_false_string_as_true():

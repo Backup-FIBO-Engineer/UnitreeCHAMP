@@ -2,6 +2,8 @@
 # Edit default_angles / terms / action_scale to match the training env.
 # Unitree stand-example pose is closer to thigh 0.67, calf -1.3; Isaac B2
 # locomotion often uses 0.8 / -1.5. Wrong defaults make the first step a jump.
+# Shipped observation is 48-D with lin_vel first (same as Go2). Drop lin_vel
+# from terms for a 45-D actor.
 /**:
   ros__parameters:
     policy_path: ""
@@ -10,6 +12,9 @@
     joint_state_topic: joint_states
     imu_topic: imu/data
     cmd_vel_topic: cmd_vel
+    odom_topic: odom/ground_truth
+    base_state_topic: ""
+    lin_vel_frame: body
     joint_names:
       - FL_hip_joint
       - FL_thigh_joint
@@ -44,6 +49,7 @@
     imu_timeout_sec: 0.2
     joint_timeout_sec: 0.2
     cmd_timeout_sec: 0.5
+    lin_vel_timeout_sec: 0.2
     # Uncomment to match training PD. Default hardware PD is the B2 stand
     # example in config/b2_lowcmd.yaml (1000 / 10).
     # kp: 1000.0
@@ -51,12 +57,14 @@
     observation:
       clip: 100.0
       history: 1
+      lin_vel_scale: 2.0
       ang_vel_scale: 0.25
       dof_pos_scale: 1.0
       dof_vel_scale: 0.05
       cmd_scale: [2.0, 2.0, 0.25]
       clock_period: 0.8
       terms:
+        - lin_vel
         - ang_vel
         - gravity
         - command

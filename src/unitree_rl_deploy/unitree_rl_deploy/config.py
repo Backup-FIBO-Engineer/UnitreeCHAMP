@@ -8,7 +8,7 @@ from typing import Any, Mapping, Optional, Sequence
 import numpy as np
 import yaml
 
-from unitree_rl_deploy.observation import ObservationConfig
+from unitree_rl_deploy.observation import LIN_VEL_FRAMES, ObservationConfig
 
 
 def parse_ros_bool(value, default: bool = False) -> bool:
@@ -68,10 +68,14 @@ class DeployConfig:
     imu_timeout_sec: float = 0.2
     joint_timeout_sec: float = 0.2
     cmd_timeout_sec: float = 0.5
+    lin_vel_timeout_sec: float = 0.2
     command_topic: str = 'joint_commands'
     joint_state_topic: str = 'joint_states'
     imu_topic: str = 'imu/data'
     cmd_vel_topic: str = 'cmd_vel'
+    odom_topic: str = 'odom/ground_truth'
+    base_state_topic: str = ''
+    lin_vel_frame: str = 'body'
     kp: Optional[float] = None
     kd: Optional[float] = None
 
@@ -88,6 +92,18 @@ class DeployConfig:
         self.max_cmd = _floats(self.max_cmd, 3, 'max_cmd')
         if self.observation.num_dofs != n:
             raise ValueError('observation.num_dofs must equal len(joint_names)')
+        self.odom_topic = str(self.odom_topic or '').strip()
+        self.base_state_topic = str(self.base_state_topic or '').strip()
+        self.lin_vel_frame = str(self.lin_vel_frame or 'body').strip().lower()
+        if self.lin_vel_frame not in LIN_VEL_FRAMES:
+            raise ValueError(
+                f'lin_vel_frame must be one of {LIN_VEL_FRAMES}, got {self.lin_vel_frame!r}')
+        if self.lin_vel_timeout_sec < 0.0:
+            raise ValueError('lin_vel_timeout_sec must be >= 0')
+        if self.observation.needs_lin_vel and not self.odom_topic and not self.base_state_topic:
+            raise ValueError(
+                'observation.terms includes lin_vel but odom_topic and '
+                'base_state_topic are empty')
 
     @property
     def num_actions(self) -> int:
@@ -124,10 +140,14 @@ class DeployConfig:
             imu_timeout_sec=float(data.get('imu_timeout_sec', 0.2)),
             joint_timeout_sec=float(data.get('joint_timeout_sec', 0.2)),
             cmd_timeout_sec=float(data.get('cmd_timeout_sec', 0.5)),
+            lin_vel_timeout_sec=float(data.get('lin_vel_timeout_sec', 0.2)),
             command_topic=str(data.get('command_topic', 'joint_commands')),
             joint_state_topic=str(data.get('joint_state_topic', 'joint_states')),
             imu_topic=str(data.get('imu_topic', 'imu/data')),
             cmd_vel_topic=str(data.get('cmd_vel_topic', 'cmd_vel')),
+            odom_topic=str(data.get('odom_topic', 'odom/ground_truth') or ''),
+            base_state_topic=str(data.get('base_state_topic', '') or ''),
+            lin_vel_frame=str(data.get('lin_vel_frame', 'body') or 'body'),
             kp=None if kp is None else float(kp),
             kd=None if kd is None else float(kd),
         )

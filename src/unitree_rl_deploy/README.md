@@ -4,9 +4,9 @@ Run a **trained** Go2 or B2 locomotion policy in MuJoCo and on the real robot.
 No training code.
 
 ```
-/cmd_vel  +  IMU  +  joints  ->  policy_runner  ->  /joint_commands
-                                                      |
-                          MuJoCo  (sim)               +-->  unitree_ros2_bridge -> /lowcmd
+/cmd_vel  +  IMU  +  joints  +  odom (lin_vel)  ->  policy_runner  ->  /joint_commands
+                                                                          |
+                              MuJoCo  (sim)                               +-->  unitree_ros2_bridge -> /lowcmd
 ```
 
 Xbox teleop: `./run_xbox_teleop.sh go2` (or `b2`) publishes `/cmd_vel`.
@@ -20,18 +20,27 @@ Xbox teleop: `./run_xbox_teleop.sh go2` (or `b2`) publishes `/cmd_vel`.
 | `urdf/`, `mujoco/`, `config/*_lowcmd.yaml` | Robot model and motor PD |
 
 `joint_names`, `default_angles` and `observation.terms` **must match the env
-that produced the checkpoint**. A 45-D actor trained as
-
-`ang_vel, gravity, command, dof_pos, dof_vel, action`
-
-loads with the shipped yaml. Official `unitree_rl_gym` Go2 is **48-D** with
-`lin_vel` first:
+that produced the checkpoint**. The shipped yaml is the **48-D** actor:
 
 `lin_vel, ang_vel, gravity, command, dof_pos, dof_vel, action`
 
-Put `lin_vel` at the start of `observation.terms` (the runner fills it with
-zeros). A gait clock or stacked history is the same: edit `terms` / `history`
-only, in training order.
+`lin_vel` is body-frame base velocity (Isaac `base_lin_vel`), scaled by
+`lin_vel_scale` (default 2.0). It is **not** filled with zeros.
+
+| Source | Topic | Twist frame | Typical use |
+|---|---|---|---|
+| MuJoCo | `odom/ground_truth` (`nav_msgs/Odometry`) | body (`lin_vel_frame: body`) | `./run_mujoco_rl.sh` |
+| Estimator odom | `odom_topic:=/odom` | body or `lin_vel_frame:=world` | real robot |
+| DLS MUSE / HAL | `base_state_topic:=/base_state` | world (rotated here) | `dls2_interface/BaseState` |
+
+If `lin_vel` is in `terms` and odom/`/base_state` is missing or stale, the runner
+holds `default_angles` instead of stepping the policy. A 45-D actor is the same
+list without `lin_vel` (then odom is unused).
+
+```bash
+./run_rl_sim2real.sh go2 eth0 policy:=/abs/path/policy.pt odom_topic:=/odom
+./run_rl_sim2real.sh go2 eth0 policy:=/abs/path/policy.pt base_state_topic:=/base_state
+```
 
 ## Build
 
@@ -61,7 +70,9 @@ Sport off, NIC toward the robot.
 
 ```bash
 ros2 launch unitree_rl_deploy unitree_rl_sim2real.launch.py robot:=go2 \
-  network_interface:=eth0 policy:=/abs/path/policy.pt
+  network_interface:=eth0 policy:=/abs/path/policy.pt odom_topic:=/odom
+ros2 launch unitree_rl_deploy unitree_rl_sim2real.launch.py robot:=go2 \
+  network_interface:=eth0 policy:=/abs/path/policy.pt base_state_topic:=/base_state
 ros2 launch unitree_rl_deploy unitree_rl_sim2real.launch.py robot:=b2 \
   network_interface:=eth0 policy:=/abs/path/policy.pt imu_topic:=/dog_imu_raw
 ./run_xbox_teleop.sh b2

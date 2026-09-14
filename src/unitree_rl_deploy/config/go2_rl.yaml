@@ -1,13 +1,14 @@
-# RL deploy for a Go2-shaped policy (Isaac Gym / unitree_rl_gym / legged_gym).
+# RL deploy for a Go2-shaped policy (Isaac Gym / unitree_rl_gym / Isaac Lab).
 # Joint names, default_angles, observation terms and action_scale MUST match
 # the env that produced the checkpoint. The runner has no robot id; this file
 # is selected by robot:=go2.
 #
-# Typical 45-D actor (no lin_vel, no clock):
-#   ang_vel(3) gravity(3) command(3) dof_pos(12) dof_vel(12) action(12)
-# Official unitree_rl_gym Go2 is 48-D with lin_vel first:
-#   terms: [lin_vel, ang_vel, gravity, command, dof_pos, dof_vel, action]
-# Deploy then feeds lin_vel as zeros unless you add an odom source.
+# Shipped layout is 48-D (unitree_rl_gym / Isaac Lab with base_lin_vel):
+#   lin_vel(3) ang_vel(3) gravity(3) command(3) dof_pos(12) dof_vel(12) action(12)
+# A 45-D actor (no lin_vel) is the same list without the first term.
+# lin_vel is body-frame base velocity. MuJoCo publishes that on odom/ground_truth.
+# On hardware, remap odom_topic to an estimator (or set base_state_topic for DLS
+# /base_state, whose linear velocity is world-frame and is rotated here).
 /**:
   ros__parameters:
     policy_path: ""
@@ -16,6 +17,10 @@
     joint_state_topic: joint_states
     imu_topic: imu/data
     cmd_vel_topic: cmd_vel
+    odom_topic: odom/ground_truth
+    base_state_topic: ""
+    # Odometry.twist frame. DLS /base_state is always treated as world.
+    lin_vel_frame: body
     # Isaac / Unitree URDF order: FL FR RL RR x hip, thigh, calf.
     joint_names:
       - FL_hip_joint
@@ -51,6 +56,7 @@
     imu_timeout_sec: 0.2
     joint_timeout_sec: 0.2
     cmd_timeout_sec: 0.5
+    lin_vel_timeout_sec: 0.2
     # Uncomment to match unitree_rl_gym Go2 PD (stiffness 20, damping 0.5).
     # Default hardware PD is the stand example in config/go2_lowcmd.yaml (60 / 5).
     # kp: 20.0
@@ -58,12 +64,14 @@
     observation:
       clip: 100.0
       history: 1
+      lin_vel_scale: 2.0
       ang_vel_scale: 0.25
       dof_pos_scale: 1.0
       dof_vel_scale: 0.05
       cmd_scale: [2.0, 2.0, 0.25]
       clock_period: 0.8
       terms:
+        - lin_vel
         - ang_vel
         - gravity
         - command

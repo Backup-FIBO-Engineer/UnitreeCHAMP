@@ -1,6 +1,8 @@
-"""ROS 2 node: IMU + joints + /cmd_vel → policy → joint_commands.
+"""ROS 2 node: IMU + joints + /cmd_vel + base velocity → policy → joint_commands.
 
 joint_commands is the topic MuJoCo and unitree_ros2_bridge consume.
+Base linear velocity (training `lin_vel`) comes from nav_msgs/Odometry and,
+optionally, DLS `dls2_interface/BaseState`.
 """
 from __future__ import annotations
 
@@ -11,6 +13,7 @@ from typing import Optional
 import numpy as np
 import rclpy
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Imu, JointState
@@ -18,6 +21,13 @@ from std_msgs.msg import Float32MultiArray
 
 from unitree_rl_deploy.config import DeployConfig
 from unitree_rl_deploy.controller import PolicyController, SensorSample
+from unitree_rl_deploy.observation import (
+    LIN_VEL_FRAME_WORLD,
+    as_quat_xyzw,
+    as_vector3,
+    linear_velocity_in_body_frame,
+    quat_xyzw_is_valid,
+)
 from unitree_rl_deploy.policy import load_policy
 
 
@@ -28,6 +38,14 @@ def _package_share() -> Path:
         return Path(get_package_share_directory('unitree_rl_deploy'))
     except Exception:
         return Path(__file__).resolve().parents[1]
+
+
+def _import_base_state_msg():
+    try:
+        from dls2_interface.msg import BaseState
+    except ImportError:
+        return None
+    return BaseState
 
 
 class PolicyRunner(Node):
@@ -48,6 +66,7 @@ class PolicyRunner(Node):
         policy = load_policy(policy_override, cfg.num_obs, cfg.num_actions, search)
         self.controller = PolicyController(cfg, policy)
         self.cfg = cfg
+        self._needs_lin_vel = cfg.observation.needs_lin_vel
 
         self._q: Optional[np.ndarray] = None
         self._dq: Optional[np.ndarray] = None
@@ -55,10 +74,12 @@ class PolicyRunner(Node):
         self._ang_vel = np.zeros(3, dtype=np.float32)
         self._accel = np.zeros(3, dtype=np.float32)
         self._orientation_valid = False
+        self._lin_vel: Optional[np.ndarray] = None
         self._cmd = np.zeros(3, dtype=np.float32)
         self._last_imu_mono = 0.0
         self._last_joint_mono = 0.0
         self._last_cmd_mono = 0.0
+        self._last_lin_vel_mono = 0.0
         self._has_cmd = False
         self._started = False
         self._name_to_index = {name: i for i, name in enumerate(cfg.joint_names)}
@@ -70,6 +91,17 @@ class PolicyRunner(Node):
         self.create_subscription(JointState, cfg.joint_state_topic, self._on_joints, 10)
         self.create_subscription(Imu, cfg.imu_topic, self._on_imu, qos_profile_sensor_data)
         self.create_subscription(Twist, cfg.cmd_vel_topic, self._on_cmd, 10)
+        if cfg.odom_topic:
+            self.create_subscription(Odometry, cfg.odom_topic, self._on_odom, 10)
+        if cfg.base_state_topic:
+            base_state_cls = _import_base_state_msg()
+            if base_state_cls is None:
+                raise RuntimeError(
+                    f'base_state_topic={cfg.base_state_topic!r} is set but '
+                    'dls2_interface is not installed. Publish nav_msgs/Odometry instead '
+                    'or install dls2_interface for /base_state.')
+            self.create_subscription(
+                base_state_cls, cfg.base_state_topic, self._on_base_state, 10)
 
         period = 1.0 / cfg.control_rate
         self.create_timer(period, self._on_timer)
@@ -79,6 +111,13 @@ class PolicyRunner(Node):
             f'({cfg.observation.history} x {cfg.observation.single_size}), '
             f'{cfg.control_rate:.0f} Hz, policy={self.policy_kind!r}'
         )
+        if self._needs_lin_vel:
+            sources = []
+            if cfg.odom_topic:
+                sources.append(f'odom={cfg.odom_topic} ({cfg.lin_vel_frame}-frame twist)')
+            if cfg.base_state_topic:
+                sources.append(f'base_state={cfg.base_state_topic} (world-frame linear vel)')
+            self.get_logger().info('lin_vel from ' + ', '.join(sources))
         if self.policy_kind == 'stand':
             self.get_logger().warn(
                 'No policy file: holding default_angles. Pass policy:=/path/to/policy.pt '
@@ -130,6 +169,35 @@ class PolicyRunner(Node):
         self._orientation_valid = finite and cov0 != -1.0
         self._last_imu_mono = time.monotonic()
 
+    def _set_body_lin_vel(self, linear_xyz, source_frame: str, quat_xyzw=None) -> None:
+        orientation = quat_xyzw if quat_xyzw is not None else self._quat
+        if source_frame == LIN_VEL_FRAME_WORLD and not quat_xyzw_is_valid(orientation):
+            if quat_xyzw_is_valid(self._quat):
+                orientation = self._quat
+            else:
+                self.get_logger().warn(
+                    'world-frame lin_vel arrived without a usable orientation; waiting',
+                    throttle_duration_sec=2.0)
+                return
+        try:
+            self._lin_vel = linear_velocity_in_body_frame(
+                linear_xyz, source_frame, orientation)
+        except ValueError as exc:
+            self.get_logger().warn(f'lin_vel rejected: {exc}', throttle_duration_sec=2.0)
+            return
+        self._last_lin_vel_mono = time.monotonic()
+
+    def _on_odom(self, msg: Odometry) -> None:
+        linear = as_vector3(msg.twist.twist.linear)
+        orientation = as_quat_xyzw(msg.pose.pose.orientation)
+        self._set_body_lin_vel(linear, self.cfg.lin_vel_frame, orientation)
+
+    def _on_base_state(self, msg) -> None:
+        # DLS BaseState.velocity.linear is world-frame (same as deploy/run_controller_ros2.py).
+        linear = as_vector3(msg.velocity.linear)
+        orientation = as_quat_xyzw(msg.pose.orientation)
+        self._set_body_lin_vel(linear, LIN_VEL_FRAME_WORLD, orientation)
+
     def _on_joints(self, msg: JointState) -> None:
         n = self.cfg.num_actions
         q = np.full(n, np.nan, dtype=np.float32)
@@ -154,6 +222,11 @@ class PolicyRunner(Node):
         self._dq = dq
         self._last_joint_mono = time.monotonic()
 
+    def _hold_or_stand(self) -> None:
+        if self._started:
+            return
+        self._publish_targets(self.cfg.default_angles)
+
     def _on_timer(self) -> None:
         now = time.monotonic()
         if self._q is None:
@@ -167,10 +240,25 @@ class PolicyRunner(Node):
             self.get_logger().warn(
                 f'stale sensors imu={imu_age:.3f}s joints={joint_age:.3f}s; holding last pose',
                 throttle_duration_sec=1.0)
-            if self._started:
-                return
-            self._publish_targets(self.cfg.default_angles)
+            self._hold_or_stand()
             return
+        if self._needs_lin_vel:
+            lin_age = now - self._last_lin_vel_mono
+            if self._lin_vel is None:
+                self.get_logger().warn(
+                    'waiting for lin_vel (odom/base_state); holding default pose',
+                    throttle_duration_sec=2.0)
+                self._hold_or_stand()
+                return
+            if (
+                self.cfg.lin_vel_timeout_sec > 0.0
+                and lin_age > self.cfg.lin_vel_timeout_sec
+            ):
+                self.get_logger().warn(
+                    f'stale lin_vel age={lin_age:.3f}s; holding last pose',
+                    throttle_duration_sec=1.0)
+                self._hold_or_stand()
+                return
         cmd = self._cmd
         if (
             self.cfg.cmd_timeout_sec > 0.0
@@ -189,6 +277,7 @@ class PolicyRunner(Node):
                 cmd_vx=float(cmd[0]),
                 cmd_vy=float(cmd[1]),
                 cmd_wz=float(cmd[2]),
+                lin_vel=None if not self._needs_lin_vel else self._lin_vel,
                 accel=self._accel,
                 orientation_valid=self._orientation_valid,
                 time_sec=now,

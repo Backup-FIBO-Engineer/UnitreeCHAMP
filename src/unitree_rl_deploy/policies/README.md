@@ -20,4 +20,5 @@ Leave it empty to hold `default_angles` (stand) so you can check topics
 before the checkpoint is on disk.
 
 The observation vector, joint order and `default_angles` in that yaml **must**
-match the training env. A mismatch walks backward, jerks, or falls.
+match the training env. The shipped yaml is 48-D (`lin_vel` first). A mismatch
+walks backward, jerks, or falls.

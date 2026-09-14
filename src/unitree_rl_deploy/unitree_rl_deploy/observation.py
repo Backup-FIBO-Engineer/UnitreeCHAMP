@@ -1,16 +1,17 @@
 """ROS-free observation packing for a Unitree locomotion actor.
 
-Default 45-D layout (legged_gym / many Isaac Gym Go2-B2 policies):
+Shipped yaml is the 48-D unitree_rl_gym / Isaac Lab layout:
 
-    ang_vel(3) | gravity(3) | command(3) | dof_pos(12) | dof_vel(12) | action(12)
+    lin_vel(3) | ang_vel(3) | gravity(3) | command(3) | dof_pos(12) | dof_vel(12) | action(12)
 
-Terms, scales and history length come from yaml so a checkpoint trained with
-clock, lin_vel or a stacked history still loads without code changes.
+A 45-D actor (no lin_vel) is the same list without the first term. Terms, scales
+and history length come from yaml so a checkpoint trained with clock or a
+stacked history still loads without code changes.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Mapping, Optional, Sequence
+from typing import List, Mapping, Optional, Sequence, Union
 
 import numpy as np
 
@@ -33,6 +34,10 @@ KNOWN_TERMS = (
     TERM_ACTION,
     TERM_CLOCK,
 )
+
+LIN_VEL_FRAME_BODY = 'body'
+LIN_VEL_FRAME_WORLD = 'world'
+LIN_VEL_FRAMES = (LIN_VEL_FRAME_BODY, LIN_VEL_FRAME_WORLD)
 
 
 def _as_float_array(value: Sequence[float], size: int, name: str) -> np.ndarray:
@@ -72,6 +77,48 @@ def gravity_from_specific_force(accel_body: Sequence[float]) -> np.ndarray:
     if not np.isfinite(norm) or norm <= 1e-6:
         return np.array([0.0, 0.0, -1.0], dtype=np.float32)
     return (-accel / norm).astype(np.float32)
+
+
+def as_vector3(value: Union[Sequence[float], object]) -> np.ndarray:
+    """geometry_msgs Vector3 or a length-3 sequence (DLS Screw.linear)."""
+    if hasattr(value, 'x'):
+        return _as_float_array(
+            (float(value.x), float(value.y), float(value.z)), 3, 'vector3')
+    return _as_float_array(value, 3, 'vector3')
+
+
+def as_quat_xyzw(value: Union[Sequence[float], object]) -> np.ndarray:
+    """geometry_msgs Quaternion or a length-4 xyzw sequence (DLS Pose.orientation)."""
+    if hasattr(value, 'x') and hasattr(value, 'w'):
+        return _as_float_array(
+            (float(value.x), float(value.y), float(value.z), float(value.w)),
+            4, 'quat_xyzw')
+    return _as_float_array(value, 4, 'quat_xyzw')
+
+
+def quat_xyzw_is_valid(quat_xyzw: Sequence[float]) -> bool:
+    q = np.asarray(quat_xyzw, dtype=np.float64).reshape(-1)
+    if q.size != 4 or not np.all(np.isfinite(q)):
+        return False
+    return float(np.linalg.norm(q)) > 1e-6
+
+
+def linear_velocity_in_body_frame(
+    linear_xyz: Sequence[float],
+    source_frame: str,
+    quat_xyzw: Sequence[float],
+) -> np.ndarray:
+    """Training `base_lin_vel` is body-frame. Rotate world twist with `quat_rotate_inverse`."""
+    velocity = as_vector3(linear_xyz)
+    frame = str(source_frame).strip().lower()
+    if frame == LIN_VEL_FRAME_BODY:
+        return velocity
+    if frame == LIN_VEL_FRAME_WORLD:
+        if not quat_xyzw_is_valid(quat_xyzw):
+            raise ValueError('world-frame lin_vel needs a finite orientation quaternion')
+        return quat_rotate_inverse_xyzw(quat_xyzw, velocity)
+    raise ValueError(
+        f'lin_vel_frame must be one of {LIN_VEL_FRAMES}, got {source_frame!r}')
 
 
 @dataclass
@@ -114,6 +161,10 @@ class ObservationConfig:
     @property
     def size(self) -> int:
         return self.single_size * self.history
+
+    @property
+    def needs_lin_vel(self) -> bool:
+        return TERM_LIN_VEL in self.terms
 
     @classmethod
     def from_mapping(cls, data: Mapping, num_dofs: int) -> 'ObservationConfig':
@@ -158,8 +209,10 @@ def pack_observation(cfg: ObservationConfig, sample: RobotObservation) -> np.nda
         elif term == TERM_COMMAND:
             pieces.append(_as_float_array(sample.command, 3, 'command') * cfg.cmd_scale)
         elif term == TERM_LIN_VEL:
-            lin = sample.lin_vel if sample.lin_vel is not None else np.zeros(3, dtype=np.float32)
-            pieces.append(_as_float_array(lin, 3, 'lin_vel') * cfg.lin_vel_scale)
+            if sample.lin_vel is None:
+                raise ValueError(
+                    'observation.terms includes lin_vel but the sample has no body-frame lin_vel')
+            pieces.append(_as_float_array(sample.lin_vel, 3, 'lin_vel') * cfg.lin_vel_scale)
         elif term == TERM_DOF_POS:
             pieces.append(_as_float_array(sample.dof_pos, n, 'dof_pos') * cfg.dof_pos_scale)
         elif term == TERM_DOF_VEL:

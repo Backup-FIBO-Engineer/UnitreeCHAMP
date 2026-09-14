@@ -113,3 +113,40 @@ def test_obs_size_must_match_yaml():
     loop = PolicyController(cfg, lambda obs: np.zeros(11, dtype=np.float32))
     with pytest.raises(ValueError, match='11 actions'):
         loop.targets(_level_sample(cfg))
+
+
+def test_controller_packs_48d_lin_vel_first():
+    cfg = _deploy_cfg(observation={
+        'terms': ['lin_vel', 'ang_vel', 'gravity', 'command', 'dof_pos', 'dof_vel', 'action'],
+        'clip': 100.0,
+        'history': 1,
+        'cmd_scale': [1.0, 1.0, 1.0],
+        'ang_vel_scale': 1.0,
+        'dof_pos_scale': 1.0,
+        'dof_vel_scale': 1.0,
+        'lin_vel_scale': 2.0,
+    })
+    assert cfg.num_obs == 48
+    seen = {}
+
+    def policy(obs):
+        seen['obs'] = np.asarray(obs, dtype=np.float32).copy()
+        return np.zeros(12, dtype=np.float32)
+
+    loop = PolicyController(cfg, policy)
+    sample = _level_sample(cfg)
+    sample.lin_vel = np.array([0.5, -0.1, 0.0], dtype=np.float32)
+    loop.targets(sample)
+    np.testing.assert_allclose(seen['obs'][:3], [1.0, -0.2, 0.0], atol=1e-5)
+    assert seen['obs'].size == 48
+
+
+def test_controller_rejects_48d_without_lin_vel_sample():
+    cfg = _deploy_cfg(observation={
+        'terms': ['lin_vel', 'ang_vel', 'gravity', 'command', 'dof_pos', 'dof_vel', 'action'],
+        'clip': 100.0,
+        'history': 1,
+    })
+    loop = PolicyController(cfg, lambda obs: np.zeros(12, dtype=np.float32))
+    with pytest.raises(ValueError, match='lin_vel'):
+        loop.targets(_level_sample(cfg))

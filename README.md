@@ -6,9 +6,9 @@ real robot over [`unitree_ros2`](https://github.com/unitreerobotics/unitree_ros2
 in this repository.
 
 ```
-/cmd_vel  +  IMU  +  joints  ->  policy_runner  ->  /joint_commands
-                                                      |
-                          MuJoCo  (sim)               +-->  unitree_ros2_bridge -> /lowcmd
+/cmd_vel  +  IMU  +  joints  +  odom (lin_vel)  ->  policy_runner  ->  /joint_commands
+                                                                          |
+                              MuJoCo  (sim)                               +-->  unitree_ros2_bridge -> /lowcmd
 ```
 
 Packages:
@@ -19,7 +19,8 @@ Packages:
 
 Put your actor in `src/unitree_rl_deploy/policies/` or pass `policy:=/path/to/file`
 (TorchScript `.pt`, actor `state_dict`, or ONNX). Observation layout lives in
-`config/go2_rl.yaml` / `config/b2_rl.yaml` and must match training.
+`config/go2_rl.yaml` / `config/b2_rl.yaml` and must match training (shipped
+default is 48-D with `lin_vel` first, same as unitree_rl_gym / Isaac Lab).
 
 ## Build
 
@@ -51,6 +52,8 @@ Sport off, NIC toward the robot, CycloneDDS on domain 0.
 ```bash
 ./run_rl_sim2real.sh go2 eth0 policy:=/abs/path/go2.pt
 ./run_rl_sim2real.sh b2 eth0 policy:=/abs/path/b2.pt imu_topic:=/dog_imu_raw
+./run_rl_sim2real.sh go2 eth0 policy:=/abs/path/go2.pt odom_topic:=/odom
+./run_rl_sim2real.sh go2 eth0 policy:=/abs/path/go2.pt base_state_topic:=/base_state
 ./run_xbox_teleop.sh b2
 ```
 

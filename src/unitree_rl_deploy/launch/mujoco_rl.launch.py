@@ -26,9 +26,11 @@ def launch_setup(context):
         Command([files.urdf_command, ' ', str(files.urdf)]), value_type=str)
     rl_params = load_ros_params(files.rl_yaml)
     policy = LaunchConfiguration('policy').perform(context).strip()
+    odom_topic = LaunchConfiguration('odom_topic').perform(context).strip()
     runner_params = [
         str(files.rl_yaml),
         {'imu_topic': LaunchConfiguration('imu_topic')},
+        {'odom_topic': odom_topic},
     ]
     if policy:
         runner_params.append({'policy': policy})
@@ -63,7 +65,7 @@ def launch_setup(context):
                 {'headless': ParameterValue(LaunchConfiguration('headless'), value_type=bool)},
                 {'command_topic': rl_params.get('command_topic', 'joint_commands')},
                 {'joint_state_topic': rl_params.get('joint_state_topic', 'joint_states')},
-                {'odom_topic': 'odom/ground_truth'},
+                {'odom_topic': odom_topic},
                 {'imu_topic': LaunchConfiguration('imu_topic')},
                 {'publish_rate': 50.0},
                 {'realtime_factor': 1.0},
@@ -100,6 +102,11 @@ def generate_launch_description():
             'imu_topic',
             default_value='imu/data',
             description='sensor_msgs/Imu from mujoco_sim',
+        ),
+        DeclareLaunchArgument(
+            'odom_topic',
+            default_value='odom/ground_truth',
+            description='nav_msgs/Odometry (body-frame twist) shared by mujoco_sim and policy_runner',
         ),
         OpaqueFunction(function=launch_setup),
     ])

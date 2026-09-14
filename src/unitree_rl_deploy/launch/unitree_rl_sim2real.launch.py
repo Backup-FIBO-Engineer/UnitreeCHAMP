@@ -41,6 +41,15 @@ def launch_setup(context):
         str(files.rl_yaml),
         {'imu_topic': LaunchConfiguration('imu_topic')},
     ]
+    odom_topic = LaunchConfiguration('odom_topic').perform(context).strip()
+    if odom_topic:
+        runner_params.append({'odom_topic': odom_topic})
+    base_state_topic = LaunchConfiguration('base_state_topic').perform(context).strip()
+    if base_state_topic:
+        runner_params.append({'base_state_topic': base_state_topic})
+    lin_vel_frame = LaunchConfiguration('lin_vel_frame').perform(context).strip()
+    if lin_vel_frame:
+        runner_params.append({'lin_vel_frame': lin_vel_frame})
     if policy:
         runner_params.append({'policy': policy})
 
@@ -122,6 +131,24 @@ def generate_launch_description():
             default_value='imu/data',
             description='sensor_msgs/Imu. Default is the bridge (/lowstate). '
                         'Real B2 external IMU: imu_topic:=/dog_imu_raw',
+        ),
+        DeclareLaunchArgument(
+            'odom_topic',
+            default_value='',
+            description='nav_msgs/Odometry for lin_vel. Empty uses yaml '
+                        '(odom/ground_truth). Estimator example: odom_topic:=/odom',
+        ),
+        DeclareLaunchArgument(
+            'base_state_topic',
+            default_value='',
+            description='Optional DLS dls2_interface/BaseState (world-frame linear vel). '
+                        'Example: base_state_topic:=/base_state',
+        ),
+        DeclareLaunchArgument(
+            'lin_vel_frame',
+            default_value='',
+            description='body or world for Odometry.twist. Empty uses yaml. '
+                        '/base_state is always world.',
         ),
         OpaqueFunction(function=launch_setup),
     ])
