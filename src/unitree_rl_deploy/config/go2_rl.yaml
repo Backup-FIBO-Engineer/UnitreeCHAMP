@@ -1,0 +1,67 @@
+# RL deploy for a Go2-shaped policy (Isaac Gym / unitree_rl_gym / legged_gym).
+# Joint names, default_angles, observation terms and action_scale MUST match
+# the env that produced the checkpoint. The runner has no robot id; this file
+# is selected by robot:=go2.
+#
+# Typical 45-D actor (no lin_vel, no clock):
+#   ang_vel(3) gravity(3) command(3) dof_pos(12) dof_vel(12) action(12)
+/**:
+  ros__parameters:
+    policy_path: ""
+    control_rate: 50.0
+    command_topic: joint_commands
+    joint_state_topic: joint_states
+    imu_topic: imu/data
+    cmd_vel_topic: cmd_vel
+    # Isaac / Unitree URDF order: FL FR RL RR x hip, thigh, calf.
+    joint_names:
+      - FL_hip_joint
+      - FL_thigh_joint
+      - FL_calf_joint
+      - FR_hip_joint
+      - FR_thigh_joint
+      - FR_calf_joint
+      - RL_hip_joint
+      - RL_thigh_joint
+      - RL_calf_joint
+      - RR_hip_joint
+      - RR_thigh_joint
+      - RR_calf_joint
+    default_angles:
+      - 0.1
+      - 0.8
+      - -1.5
+      - -0.1
+      - 0.8
+      - -1.5
+      - 0.1
+      - 1.0
+      - -1.5
+      - -0.1
+      - 1.0
+      - -1.5
+    action_scale: 0.25
+    hip_scale_reduction: 1.0
+    hip_indices: [0, 3, 6, 9]
+    clip_actions: 100.0
+    max_cmd: [1.0, 0.6, 1.2]
+    imu_timeout_sec: 0.2
+    joint_timeout_sec: 0.2
+    # Uncomment to override config/go2_lowcmd.yaml PD (match training stiffness).
+    # kp: 20.0
+    # kd: 0.5
+    observation:
+      clip: 100.0
+      history: 1
+      ang_vel_scale: 0.25
+      dof_pos_scale: 1.0
+      dof_vel_scale: 0.05
+      cmd_scale: [2.0, 2.0, 0.25]
+      clock_period: 0.8
+      terms:
+        - ang_vel
+        - gravity
+        - command
+        - dof_pos
+        - dof_vel
+        - action

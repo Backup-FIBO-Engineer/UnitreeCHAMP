@@ -3,6 +3,8 @@
 CHAMP gait planning + IK/FK + odometry for quadrupeds, with a MuJoCo
 simulator and a Unitree `/lowcmd` / `/lowstate` bridge over
 [unitree_ros2](https://github.com/unitreerobotics/unitree_ros2) (Sim2Real).
+Branch `UnitreeRLDeploy` drives the same MuJoCo node and bridge with
+`unitree_rl_deploy` (policy → `/joint_commands`) instead of CHAMP gait.
 
 The code is **robot-agnostic**. Nothing in `src/`, `mujoco/mujoco_sim.py`,
 the launch files or the offline tools contains a joint name, link name, joint

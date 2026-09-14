@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>unitree_rl_deploy</name>
+  <version>0.1.0</version>
+  <description>
+    Deploy a trained locomotion policy on Unitree quadrupeds. Observation and
+    action layout come from config/&lt;robot&gt;_rl.yaml. MuJoCo and /lowcmd
+    hardware use champ_base_gait_planning (no CHAMP gait, no RL training).
+  </description>
+  <maintainer email="fibo@todo.todo">fibo</maintainer>
+  <license>BSD</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>champ_base_gait_planning</depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>rmw_cyclonedds_cpp</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

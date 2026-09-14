@@ -1,3 +1,20 @@
+# UnitreeRLDeploy
+
+This branch runs a **trained Go2 / B2 policy** in MuJoCo and on the real robot.
+It does **not** include RL training. Put your actor (`.pt` or `.onnx`) in
+`src/unitree_rl_deploy/policies/` or pass `policy:=/path/to/file`.
+
+```bash
+colcon build --packages-select champ champ_msgs champ_base_gait_planning unitree_rl_deploy --symlink-install
+source install/setup.bash
+./run_mujoco_rl.sh go2 policy:=/abs/path/policy.pt
+./run_rl_sim2real.sh b2 eth0 policy:=/abs/path/policy.pt
+```
+
+Details: `src/unitree_rl_deploy/README.md`. The MuJoCo model and
+`unitree_ros2_bridge` (`/lowcmd`) are the same as CHAMP Sim2Real; the policy
+replaces CHAMP gait. Analytic trot launches are still here if you need them.
+
 # UnitreeUniversalCHAMP
 
 CHAMP gait / IK / odometry, MuJoCo simulation and Unitree LowCmd Sim2Real for
