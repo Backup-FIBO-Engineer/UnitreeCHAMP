@@ -35,6 +35,15 @@ def test_auto_skips_virtual_when_no_xbox_name():
     assert choose_joystick_id(devices, 'auto') == 1
 
 
+def test_auto_picks_xpadneo_xbox_360_name():
+    devices = [
+        (0, 'Xbox 360 Controller'),
+        (1, 'Xbox 360 Controller'),
+        (2, 'RustDesk UInput Keyboard'),
+    ]
+    assert choose_joystick_id(devices, 'auto') == 0
+
+
 def test_auto_only_rustdesk_is_none():
     devices = [(0, 'RustDesk UInput Keyboard')]
     assert choose_joystick_id(devices, 'auto') is None

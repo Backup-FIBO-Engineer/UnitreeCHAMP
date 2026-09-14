@@ -51,7 +51,7 @@ def choose_joystick_id(
     if not devices:
         return None
     for index, name in devices:
-        if _name_looks_like_xbox(name):
+        if _name_looks_like_xbox(name) and not _name_looks_like_virtual(name):
             return index
     for index, name in devices:
         if not _name_looks_like_virtual(name):
