@@ -32,6 +32,31 @@ _POSE = dict(
     max_pitch=0.20,
 )
 
+# xpadneo + joy_node: Linux axis order, stick up / stick left are positive.
+_LINUX = dict(
+    vx_axis=1,
+    vy_axis=0,
+    yaw_axis=3,
+    invert_vx=False,
+    invert_vy=False,
+    invert_yaw=False,
+    deadzone=0.0,
+    max_linear_x=0.50,
+    max_linear_y=0.15,
+    max_angular_z=0.6,
+)
+_LINUX_POSE = dict(
+    roll_axis=3,
+    pitch_axis=4,
+    invert_roll=True,
+    invert_pitch=True,
+    deadzone=0.0,
+    roll_rate=0.4,
+    pitch_rate=0.4,
+    max_roll=0.25,
+    max_pitch=0.20,
+)
+
 
 def test_nose_up_0_10_matches_readme_quaternion():
     x, y, z, w = quaternion_from_rpy(0.0, -0.10, 0.0)
@@ -73,6 +98,41 @@ def test_vx_vy_yaw_together():
     assert vx == 0.50
     assert vy == -0.15
     assert wz == -0.6
+
+
+def test_xpadneo_stick_up_is_forward_stick_left_turns_left():
+    # axes: 0 LX, 1 LY, 2 LT, 3 RX, 4 RY
+    vx, vy, wz = locomotion_twist(
+        [0.0, 1.0, 0.0, 0.0, 0.0], **_LINUX
+    )
+    assert vx == 0.50
+    vx, vy, wz = locomotion_twist(
+        [0.0, 0.0, 0.0, 1.0, 0.0], **_LINUX
+    )
+    assert wz == 0.6  # stick left (positive RX) → +yaw = turn left
+
+
+def test_xpadneo_stick_right_strafes_right():
+    _, vy, _ = locomotion_twist([ -1.0, 0.0, 0.0, 0.0, 0.0], **_LINUX)
+    assert vy == -0.15  # stick right (negative LX) → −vy
+
+
+def test_xpadneo_body_pose_stick_up_is_nose_up():
+    roll, pitch, moved = integrate_body_pose(
+        0.0, 0.0, [0.0, 0.0, 0.0, 0.0, 1.0], dt=0.25, **_LINUX_POSE
+    )
+    assert moved
+    assert abs(roll) < 1e-12
+    assert abs(pitch - (-0.10)) < 1e-9
+
+
+def test_xpadneo_body_pose_stick_right_is_positive_roll():
+    roll, pitch, moved = integrate_body_pose(
+        0.0, 0.0, [0.0, 0.0, 0.0, -1.0, 0.0], dt=0.25, **_LINUX_POSE
+    )
+    assert moved
+    assert abs(roll - 0.10) < 1e-9
+    assert abs(pitch) < 1e-12
 
 
 def test_first_packet_is_not_a_rising_edge():

@@ -1,8 +1,10 @@
 """Joystick → CHAMP command math (no ROS, no robot constants).
 
-Linux / joy_node convention for an Xbox pad (xpad / xpadneo): stick-up is a
-negative axis value. Body pose uses the same RPY → quaternion as CHAMP
-(tf2 setRPY): +roll = right side down, +pitch = nose down.
+Linux / joy_node convention for a classic Xbox pad: stick-up is a negative
+axis value. xpadneo + SDL (Xbox 360 spoof) is the opposite: stick-up and
+stick-left are positive; see xbox_one_s_1708_bt_linuxjs.yaml. Body pose uses
+the same RPY → quaternion as CHAMP (tf2 setRPY): +roll = right side down,
++pitch = nose down.
 """
 from __future__ import annotations
 

@@ -107,17 +107,13 @@ SDL index is **not** `/dev/input/jsN`. List what `joy_node` can see:
 ros2 run joy joy_enumerate_devices
 ```
 
-Default `device_id:=auto` picks the first name containing `Xbox` and skips
-virtual pads (RustDesk). After xpadneo, SDL often lists the 1708 as
-**Xbox 360 Controller** (PID spoof `0x028E`) twice, then RustDesk. That 360
-name **is** the 1708 — do not pass `device_name:="Xbox Wireless Controller"`
-(SDL will not match). `Mapped: false` is normal; if the right stick is axes
-3/4 on `/joy`, launch `driver:=linux`.
+After xpadneo, SDL lists the 1708 as **Xbox 360 Controller**. `driver:=auto`
+(the default) then loads the Linux axis map (right stick = axes 3/4) and the
+stick signs for that path: up = forward, right-stick left = turn left.
+Hold **RB** to walk. Body-pose: stick up = nose up, stick right = roll right.
 
 ```bash
 ./run_xbox_teleop.sh b2
-./run_xbox_teleop.sh b2 device_id:=0
-./run_xbox_teleop.sh b2 driver:=linux
 ```
 
 If enumerate shows **only** `RustDesk UInput Keyboard`, the Xbox is not a

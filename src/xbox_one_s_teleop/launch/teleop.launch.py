@@ -6,8 +6,8 @@
 
 robot:= loads gait + body_pose yaml from champ_base_gait_planning so stick
 full-scale matches that robot's max vx/vy/wz and max roll/pitch. Mapping of
-the pad itself is config/xbox_one_s_1708_bt.yaml (SDL2 joy_node) unless
-driver:=linux (kernel js axis order). No robot numbers in the pad yaml.
+the pad itself is yaml: SDL axes 0/1/2/3, or Linux/xpadneo 0/1/3/4 when the
+pad is listed as Xbox 360 (`driver:=auto`). No robot numbers in the pad yaml.
 """
 from pathlib import Path
 
@@ -18,7 +18,11 @@ from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
-from xbox_one_s_teleop.sdl_devices import resolve_joy_device_id, missing_pad_error
+from xbox_one_s_teleop.sdl_devices import (
+    missing_pad_error,
+    pad_mapping_yaml,
+    resolve_joy_device_id,
+)
 
 
 def _load_ros_params(path: Path) -> dict:
@@ -58,12 +62,6 @@ def _robot_limits(robot: str) -> dict:
 
 def launch_setup(context):
     pkg = get_package_share_directory('xbox_one_s_teleop')
-    mapping_name = (
-        'xbox_one_s_1708_bt_linuxjs.yaml'
-        if LaunchConfiguration('driver').perform(context).strip().lower() == 'linux'
-        else 'xbox_one_s_1708_bt.yaml'
-    )
-    mapping = str(Path(pkg) / 'config' / mapping_name)
     robot = LaunchConfiguration('robot').perform(context).strip()
     overlay = _robot_limits(robot)
     requested_id = LaunchConfiguration('device_id').perform(context).strip()
@@ -73,6 +71,11 @@ def launch_setup(context):
     if auto and device_id is None:
         raise RuntimeError(missing_pad_error(sdl_devices))
     chosen_name = next((name for idx, name in sdl_devices if idx == device_id), '')
+    mapping_name = pad_mapping_yaml(
+        LaunchConfiguration('driver').perform(context),
+        chosen_name,
+    )
+    mapping = str(Path(pkg) / 'config' / mapping_name)
     joy_params = {
         'device_id': device_id,
         'deadzone': 0.05,
@@ -148,8 +151,11 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'driver',
-            default_value='sdl',
-            description='Axis map: sdl = ROS 2 joy_node (default), linux = kernel js / jstest order',
+            default_value='auto',
+            description=(
+                'Axis map: auto = linux if SDL name is Xbox 360 (xpadneo), else sdl. '
+                'linux = kernel js order (right stick 3/4). sdl = RX/RY on 2/3.'
+            ),
         ),
         OpaqueFunction(function=launch_setup),
     ])

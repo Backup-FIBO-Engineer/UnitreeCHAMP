@@ -1,6 +1,14 @@
-# Same pad, Linux joystick API order (jstest / xpad / xpadneo / joy_linux_node).
-# LT/RT occupy axes 2 and 5, so the right stick is 3 and 4.
-# Launch with driver:=linux
+# Xbox One S 1708 Bluetooth via xpadneo + ROS 2 joy_node (SDL2).
+#
+# xpadneo spoofs PID 0x028E ("Xbox 360 Controller") and uses Linux gamepad
+# axis order: LT/RT occupy 2 and 5, so the right stick is 3 and 4.
+# SDL2 /joy signs on this path: stick up and stick left are positive
+# (not classic jstest). invert_* below undo that so:
+#   stick up    → +vx (forward) / nose up (−pitch)
+#   stick left  → +yaw (turn left) / strafe left if left stick
+#   stick right → robot right (−vy) / +roll (right side down)
+#
+# Launch driver:=linux or driver:=auto when the pad is listed as Xbox 360.
 /**:
   ros__parameters:
     joy_topic: joy
@@ -14,11 +22,11 @@
     axis_yaw: 3
     axis_roll: 3
     axis_pitch: 4
-    invert_vx: true
-    invert_vy: true
-    invert_yaw: true
-    invert_roll: false
-    invert_pitch: false
+    invert_vx: false
+    invert_vy: false
+    invert_yaw: false
+    invert_roll: true
+    invert_pitch: true
     button_mode: 4
     button_deadman: 5
     button_reset: 0

@@ -44,6 +44,16 @@ def test_auto_picks_xpadneo_xbox_360_name():
     assert choose_joystick_id(devices, 'auto') == 0
 
 
+def test_auto_mapping_uses_linuxjs_for_xpadneo_360():
+    from xbox_one_s_teleop.sdl_devices import pad_mapping_yaml
+    assert pad_mapping_yaml('auto', 'Xbox 360 Controller') == (
+        'xbox_one_s_1708_bt_linuxjs.yaml'
+    )
+    assert pad_mapping_yaml('sdl', 'Xbox 360 Controller') == (
+        'xbox_one_s_1708_bt.yaml'
+    )
+
+
 def test_auto_only_rustdesk_is_none():
     devices = [(0, 'RustDesk UInput Keyboard')]
     assert choose_joystick_id(devices, 'auto') is None

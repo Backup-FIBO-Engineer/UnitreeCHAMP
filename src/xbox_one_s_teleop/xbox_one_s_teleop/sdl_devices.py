@@ -94,3 +94,13 @@ def list_sdl_joysticks(timeout_sec: float = 5.0) -> List[Device]:
 def resolve_joy_device_id(requested: str = 'auto') -> Tuple[Optional[int], List[Device]]:
     devices = list_sdl_joysticks()
     return choose_joystick_id(devices, requested), devices
+
+
+def pad_mapping_yaml(driver: str, chosen_name: str) -> str:
+    """Which stick-index yaml to load. xpadneo lists the 1708 as Xbox 360."""
+    d = (driver or '').strip().lower()
+    if d in ('', 'auto'):
+        d = 'linux' if '360' in (chosen_name or '').lower() else 'sdl'
+    if d == 'linux':
+        return 'xbox_one_s_1708_bt_linuxjs.yaml'
+    return 'xbox_one_s_1708_bt.yaml'
