@@ -18,7 +18,7 @@ from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
-from xbox_one_s_teleop.sdl_devices import resolve_joy_device_id
+from xbox_one_s_teleop.sdl_devices import resolve_joy_device_id, missing_pad_error
 
 
 def _load_ros_params(path: Path) -> dict:
@@ -69,6 +69,9 @@ def launch_setup(context):
     requested_id = LaunchConfiguration('device_id').perform(context).strip()
     device_name = LaunchConfiguration('device_name').perform(context).strip()
     device_id, sdl_devices = resolve_joy_device_id(requested_id)
+    auto = requested_id.lower() in ('', 'auto')
+    if auto and device_id is None:
+        raise RuntimeError(missing_pad_error(sdl_devices))
     chosen_name = next((name for idx, name in sdl_devices if idx == device_id), '')
     joy_params = {
         'device_id': device_id,

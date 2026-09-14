@@ -56,7 +56,19 @@ def choose_joystick_id(
     for index, name in devices:
         if not _name_looks_like_virtual(name):
             return index
-    return devices[0][0]
+    return None
+
+
+def missing_pad_error(devices: Sequence[Device]) -> str:
+    listed = ', '.join(f'{idx}:{name}' for idx, name in devices) or 'none'
+    return (
+        'No Xbox pad in the SDL joystick list (joy_node cannot see it). '
+        f'Currently listed: {listed}. '
+        '/dev/input/js0 is not the SDL index — RustDesk UInput Keyboard often '
+        'appears as the only gamepad. Connect the 1708 over Bluetooth until '
+        'ros2 run joy joy_enumerate_devices shows a line named Xbox, or install '
+        'xpadneo. Closing RustDesk can also reveal the real pad.'
+    )
 
 
 def list_sdl_joysticks(timeout_sec: float = 5.0) -> List[Device]:
@@ -79,9 +91,6 @@ def list_sdl_joysticks(timeout_sec: float = 5.0) -> List[Device]:
     return parse_joy_enumerate(proc.stdout or '')
 
 
-def resolve_joy_device_id(requested: str = 'auto') -> Tuple[int, List[Device]]:
+def resolve_joy_device_id(requested: str = 'auto') -> Tuple[Optional[int], List[Device]]:
     devices = list_sdl_joysticks()
-    chosen = choose_joystick_id(devices, requested)
-    if chosen is None:
-        return 0, devices
-    return chosen, devices
+    return choose_joystick_id(devices, requested), devices

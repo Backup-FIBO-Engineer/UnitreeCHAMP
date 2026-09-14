@@ -72,6 +72,11 @@ virtual pads (RustDesk UInput Keyboard often sits at SDL id 0). To force one:
 ./run_xbox_teleop.sh b2 device_name:="Xbox Wireless Controller"
 ```
 
+If enumerate shows **only** `RustDesk UInput Keyboard`, the Xbox is not a
+joystick yet. `js0` is often that RustDesk pad. Pair the 1708 until a second
+line named `Xbox ...` appears (xpadneo if Bluetooth connects but no joystick),
+then relaunch. Closing RustDesk can help.
+
 If `/joy` right-stick axes are **3 and 4** (kernel `jstest` order, not SDL),
 launch with `driver:=linux`:
 
