@@ -179,3 +179,18 @@ def test_launch_files_exist():
     launch = PKG / 'launch'
     assert (launch / 'mujoco_rl.launch.py').is_file()
     assert (launch / 'unitree_rl_sim2real.launch.py').is_file()
+
+
+def test_sim2real_launch_defaults_to_muse_base_state():
+    text = (PKG / 'launch' / 'unitree_rl_sim2real.launch.py').read_text(encoding='utf-8')
+    assert "DEFAULT_MUSE_BASE_STATE = '/base_state'" in text
+    assert 'default_value=DEFAULT_MUSE_BASE_STATE' in text
+    assert 'ros2 launch state_estimator state_estimator.launch.py' in text
+    mujoco = (PKG / 'launch' / 'mujoco_rl.launch.py').read_text(encoding='utf-8')
+    assert "default_value='odom/ground_truth'" in mujoco
+    root = PKG.parents[1]
+    muse_helper = (root / 'run_muse.sh').read_text(encoding='utf-8')
+    assert 'state_estimator.launch.py' in muse_helper
+    sim2real = (root / 'run_rl_sim2real.sh').read_text(encoding='utf-8')
+    assert 'MUSE_WS' in sim2real
+    assert 'dls2_interface' in sim2real

@@ -1,4 +1,4 @@
-"""Golden checks against iit-DLSLab Flat / Rough-Blind observation packing."""
+"""Golden checks against iit-DLSLab Go2 Rough-Blind observation packing."""
 from pathlib import Path
 
 import numpy as np

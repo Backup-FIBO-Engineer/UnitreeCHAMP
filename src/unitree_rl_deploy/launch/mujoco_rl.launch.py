@@ -45,8 +45,8 @@ def launch_setup(context):
 
     return [
         LogInfo(msg=[
-            f'{files.robot} MuJoCo RL: policy_runner -> joint_commands -> mujoco_sim. '
-            '/cmd_vel steers the policy.'
+            f'{files.robot} MuJoCo Rough-Blind: policy_runner -> joint_commands -> mujoco_sim. '
+            '/cmd_vel steers the policy. Ground-truth odom fills lin_vel (no MUSE in this path).'
         ]),
         Node(
             package='unitree_rl_deploy',
@@ -89,7 +89,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'robot',
-            description='Robot name: ' + ', '.join(robots),
+            default_value='go2',
+            description='Robot name (this stack is Go2 Rough-Blind): ' + ', '.join(robots),
         ),
         DeclareLaunchArgument('headless', default_value='false'),
         DeclareLaunchArgument('start_robot_state_publisher', default_value='true'),

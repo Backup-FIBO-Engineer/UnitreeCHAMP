@@ -3,8 +3,9 @@
   <name>unitree_rl_deploy</name>
   <version>0.1.0</version>
   <description>
-    Deploy a trained Go2/B2 locomotion policy in MuJoCo and on the real robot
-    over unitree_ros2 (/lowcmd, /lowstate). Policy deploy only; no RL training.
+    Deploy a trained Go2 Rough-Blind locomotion policy in MuJoCo and on the
+    real robot over unitree_ros2 (/lowcmd, /lowstate). Policy deploy only;
+    no RL training. Sim2Real body velocity comes from MUSE /base_state.
   </description>
   <maintainer email="fibo@todo.todo">fibo</maintainer>
   <license>BSD</license>

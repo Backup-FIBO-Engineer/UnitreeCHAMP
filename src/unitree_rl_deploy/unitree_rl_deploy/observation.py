@@ -1,6 +1,6 @@
 """ROS-free observation packing for a Unitree locomotion actor.
 
-Shipped yaml is the DLS Flat/Blind actor (Go2 and B2, no vision):
+Shipped yaml is the DLS Go2 Rough-Blind actor (`use_imu=False`, no vision):
 
     lin_vel(3) | ang_vel(3) | gravity(3) | command(3)
     | dof_pos(12) | dof_vel(12) | last_action(12) | gait_clock(4)
@@ -37,7 +37,7 @@ KNOWN_TERMS = (
     TERM_CLOCK,
 )
 
-# DLS Flat / Rough-Blind (use_imu=False, use_vision=False).
+# DLS Go2 Rough-Blind (use_imu=False, use_vision=False).
 DLS_BLIND_TERMS = (
     TERM_LIN_VEL,
     TERM_ANG_VEL,
@@ -94,16 +94,16 @@ def gravity_from_specific_force(accel_body: Sequence[float]) -> np.ndarray:
 
 
 def as_vector3(value: Union[Sequence[float], object]) -> np.ndarray:
-    """geometry_msgs Vector3 or a length-3 sequence (DLS Screw.linear)."""
-    if hasattr(value, 'x'):
+    """geometry_msgs Vector3, DLS Screw.linear (float64[3]), or a length-3 sequence."""
+    if hasattr(value, 'x') and not hasattr(value, 'shape'):
         return _as_float_array(
             (float(value.x), float(value.y), float(value.z)), 3, 'vector3')
     return _as_float_array(value, 3, 'vector3')
 
 
 def as_quat_xyzw(value: Union[Sequence[float], object]) -> np.ndarray:
-    """geometry_msgs Quaternion or a length-4 xyzw sequence (DLS Pose.orientation)."""
-    if hasattr(value, 'x') and hasattr(value, 'w'):
+    """geometry_msgs Quaternion or DLS Pose.orientation (float64[4] xyzw)."""
+    if hasattr(value, 'x') and hasattr(value, 'w') and not hasattr(value, 'shape'):
         return _as_float_array(
             (float(value.x), float(value.y), float(value.z), float(value.w)),
             4, 'quat_xyzw')

@@ -1,9 +1,13 @@
-"""Policy runner + unitree_ros2_bridge on a real Unitree quadruped.
+"""Go2 Rough-Blind policy runner + unitree_ros2_bridge on a real Unitree Go2.
+
+MUSE is required for body linear velocity. Launch it in another terminal:
+
+    ros2 launch state_estimator state_estimator.launch.py
+
+Then:
 
     ros2 launch unitree_rl_deploy unitree_rl_sim2real.launch.py robot:=go2 \\
-        network_interface:=eth0 policy:=/path/to/policy.pt
-    ros2 launch unitree_rl_deploy unitree_rl_sim2real.launch.py robot:=b2 \\
-        network_interface:=eth0 policy:=/path/to/policy.pt
+        network_interface:=eth0 policy:=/path/to/policy.onnx
 """
 
 from pathlib import Path
@@ -11,11 +15,14 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction, SetEnvironmentVariable
+from launch.conditions import IfCondition
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 from unitree_rl_deploy.robot_files import available_robots, load_ros_params, resolve_robot_files
+
+DEFAULT_MUSE_BASE_STATE = '/base_state'
 
 
 def cyclonedds_uri(network_interface: str) -> str:
@@ -37,21 +44,16 @@ def launch_setup(context):
         Command([files.urdf_command, ' ', str(files.urdf)]), value_type=str)
     rl_params = load_ros_params(files.rl_yaml)
     policy = LaunchConfiguration('policy').perform(context).strip()
+    odom_topic = LaunchConfiguration('odom_topic').perform(context).strip()
+    base_state_topic = LaunchConfiguration('base_state_topic').perform(context).strip()
+    if not odom_topic and not base_state_topic:
+        base_state_topic = DEFAULT_MUSE_BASE_STATE
     runner_params = [
         str(files.rl_yaml),
         {'imu_topic': LaunchConfiguration('imu_topic')},
+        {'odom_topic': odom_topic},
+        {'base_state_topic': base_state_topic},
     ]
-    odom_topic = LaunchConfiguration('odom_topic').perform(context).strip()
-    base_state_topic = LaunchConfiguration('base_state_topic').perform(context).strip()
-    if odom_topic:
-        runner_params.append({'odom_topic': odom_topic})
-    if base_state_topic:
-        runner_params.append({'base_state_topic': base_state_topic})
-        if not odom_topic:
-            # Do not keep yaml odom/ground_truth on a real robot.
-            runner_params.append({'odom_topic': ''})
-    if not odom_topic and not base_state_topic:
-        runner_params.append({'odom_topic': '/odom'})
     lin_vel_frame = LaunchConfiguration('lin_vel_frame').perform(context).strip()
     if lin_vel_frame:
         runner_params.append({'lin_vel_frame': lin_vel_frame})
@@ -84,10 +86,14 @@ def launch_setup(context):
             '(source unitree_ros2/setup.sh)',
         ]))
 
+    lin_vel_msg = (
+        f'MUSE {base_state_topic}' if base_state_topic else f'odom {odom_topic or "(none)"}'
+    )
     return actions + [
         LogInfo(msg=[
-            f'{files.robot} Sim2Real RL: policy_runner -> joint_commands -> /lowcmd. '
-            'Sport must stay off. Do not mix with the Sport API.'
+            f'{files.robot} Rough-Blind Sim2Real: policy_runner -> joint_commands -> /lowcmd. '
+            f'lin_vel from {lin_vel_msg}. Sport must stay off. '
+            'MUSE is a separate process: ros2 launch state_estimator state_estimator.launch.py'
         ]),
         Node(
             package='unitree_rl_deploy',
@@ -109,6 +115,7 @@ def launch_setup(context):
             name='robot_state_publisher',
             output='screen',
             parameters=[{'robot_description': robot_description}],
+            condition=IfCondition(LaunchConfiguration('start_robot_state_publisher')),
         ),
     ]
 
@@ -119,7 +126,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'robot',
-            description='Robot name: ' + ', '.join(robots),
+            default_value='go2',
+            description='Robot name (this stack is Go2 Rough-Blind): ' + ', '.join(robots),
         ),
         DeclareLaunchArgument(
             'network_interface',
@@ -134,26 +142,29 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'imu_topic',
             default_value='imu/data',
-            description='sensor_msgs/Imu. Default is the bridge (/lowstate). '
-                        'Real B2 external IMU: imu_topic:=/dog_imu_raw',
+            description='sensor_msgs/Imu from the bridge (/lowstate). Optional when MUSE /base_state is live.',
         ),
         DeclareLaunchArgument(
             'odom_topic',
             default_value='',
-            description='nav_msgs/Odometry for lin_vel. Empty uses /odom '
-                        '(not yaml odom/ground_truth). Estimator example: odom_topic:=/odom',
+            description='nav_msgs/Odometry for lin_vel. Empty on Sim2Real (MUSE /base_state is the default).',
         ),
         DeclareLaunchArgument(
             'base_state_topic',
-            default_value='',
-            description='Optional DLS dls2_interface/BaseState (world-frame linear vel). '
-                        'Example: base_state_topic:=/base_state',
+            default_value=DEFAULT_MUSE_BASE_STATE,
+            description='MUSE dls2_interface/BaseState (world-frame linear vel). '
+                        'Empty only if you pass odom_topic:= instead.',
         ),
         DeclareLaunchArgument(
             'lin_vel_frame',
             default_value='',
             description='body or world for Odometry.twist. Empty uses yaml. '
                         '/base_state is always world.',
+        ),
+        DeclareLaunchArgument(
+            'start_robot_state_publisher',
+            default_value='false',
+            description='MUSE already starts robot_state_publisher. Set true only if MUSE is not running.',
         ),
         OpaqueFunction(function=launch_setup),
     ])

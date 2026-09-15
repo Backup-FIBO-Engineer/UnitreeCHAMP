@@ -1,12 +1,16 @@
 #!/bin/bash
-# Usage: ./run_mujoco_rl.sh <robot> [extra launch args]
-#   ./run_mujoco_rl.sh go2
-#   ./run_mujoco_rl.sh b2 policy:=/path/to/policy.pt
+# Sim2Sim MuJoCo for Go2 Rough-Blind.
+# Usage: ./run_mujoco_rl.sh [robot] [extra launch args]
+#   ./run_mujoco_rl.sh
+#   ./run_mujoco_rl.sh go2 policy:=/abs/path/policy.onnx
 set -e
 cd "$(dirname "$0")"
 
-ROBOT="${1:?usage: $0 <robot> [launch args]  (robot = go2 or b2)}"
-shift
+ROBOT="go2"
+if [[ $# -gt 0 && "${1}" != *:=* ]]; then
+  ROBOT="${1}"
+  shift
+fi
 
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 source "/opt/ros/${ROS_DISTRO}/setup.bash"

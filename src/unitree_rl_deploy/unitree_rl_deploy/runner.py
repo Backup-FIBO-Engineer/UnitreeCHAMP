@@ -1,9 +1,11 @@
 """ROS 2 node: IMU + joints + /cmd_vel + base velocity → policy → joint_commands.
 
 joint_commands is the topic MuJoCo and unitree_ros2_bridge consume.
-Base linear velocity (training `lin_vel`) comes from nav_msgs/Odometry and,
-optionally, DLS `dls2_interface/BaseState`, rotated into the body frame.
-The controller then adds ω × r_com so the value matches Isaac `root_lin_vel_b`.
+
+Go2 Rough-Blind (`use_imu=False`) needs body-frame linear velocity in the first
+three observation slots. Sim2Sim MuJoCo uses `nav_msgs/Odometry`. Sim2Real uses
+MUSE `dls2_interface/BaseState` on `/base_state` (world-frame linear velocity,
+rotated here). Never put IMU linear_acceleration in those slots.
 """
 from __future__ import annotations
 
@@ -76,6 +78,8 @@ class PolicyRunner(Node):
         self._accel = np.zeros(3, dtype=np.float32)
         self._orientation_valid = False
         self._lin_vel: Optional[np.ndarray] = None
+        self._base_quat = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+        self._base_ang_vel = np.zeros(3, dtype=np.float32)
         self._cmd = np.zeros(3, dtype=np.float32)
         self._last_imu_mono = 0.0
         self._last_joint_mono = 0.0
@@ -99,8 +103,10 @@ class PolicyRunner(Node):
             if base_state_cls is None:
                 raise RuntimeError(
                     f'base_state_topic={cfg.base_state_topic!r} is set but '
-                    'dls2_interface is not installed. Publish nav_msgs/Odometry instead '
-                    'or install dls2_interface for /base_state.')
+                    'dls2_interface is not on PYTHONPATH. Source the MUSE workspace '
+                    '(muse_ws/install/setup.bash) then this overlay, and launch '
+                    '`ros2 launch state_estimator state_estimator.launch.py` in '
+                    'another terminal. Do not fill lin_vel with IMU acceleration.')
             self.create_subscription(
                 base_state_cls, cfg.base_state_topic, self._on_base_state, 10)
 
@@ -118,8 +124,14 @@ class PolicyRunner(Node):
             if cfg.odom_topic:
                 sources.append(f'odom={cfg.odom_topic} ({cfg.lin_vel_frame}-frame twist)')
             if cfg.base_state_topic:
-                sources.append(f'base_state={cfg.base_state_topic} (world-frame linear vel)')
-            self.get_logger().info('lin_vel from ' + ', '.join(sources))
+                sources.append(
+                    f'base_state={cfg.base_state_topic} (MUSE world-frame linear vel)')
+            self.get_logger().info('lin_vel from ' + ', '.join(sources) if sources else 'lin_vel: no source')
+            if cfg.base_state_topic:
+                self.get_logger().warn(
+                    'Rough-Blind Sim2Real waits for MUSE /base_state + joints before '
+                    'running the policy (holds default_angles until then). Launch MUSE with: '
+                    'ros2 launch state_estimator state_estimator.launch.py')
         if self.policy_kind == 'stand':
             self.get_logger().warn(
                 'No policy file: holding default_angles. Pass policy:=/path/to/policy.pt '
@@ -195,10 +207,21 @@ class PolicyRunner(Node):
         self._set_body_lin_vel(linear, self.cfg.lin_vel_frame, orientation)
 
     def _on_base_state(self, msg) -> None:
-        # DLS BaseState.velocity.linear is world-frame (same as deploy/run_controller_ros2.py).
+        # DLS BaseState: velocity.linear is world, velocity.angular is body,
+        # pose.orientation is xyzw. Same mapping as deploy/run_controller_ros2.py.
         linear = as_vector3(msg.velocity.linear)
         orientation = as_quat_xyzw(msg.pose.orientation)
+        self._base_quat = orientation
+        self._base_ang_vel = as_vector3(msg.velocity.angular)
         self._set_body_lin_vel(linear, LIN_VEL_FRAME_WORLD, orientation)
+
+    def _muse_lin_vel_ok(self, now: float) -> bool:
+        if not self.cfg.base_state_topic or self._lin_vel is None:
+            return False
+        timeout = self.cfg.lin_vel_timeout_sec
+        if timeout > 0.0 and (now - self._last_lin_vel_mono) > timeout:
+            return False
+        return True
 
     def _on_joints(self, msg: JointState) -> None:
         n = self.cfg.num_actions
@@ -238,17 +261,24 @@ class PolicyRunner(Node):
             return
         imu_age = now - self._last_imu_mono
         joint_age = now - self._last_joint_mono
-        if imu_age > self.cfg.imu_timeout_sec or joint_age > self.cfg.joint_timeout_sec:
+        muse_ok = self._muse_lin_vel_ok(now)
+        if joint_age > self.cfg.joint_timeout_sec:
             self.get_logger().warn(
-                f'stale sensors imu={imu_age:.3f}s joints={joint_age:.3f}s; holding last pose',
+                f'stale joints age={joint_age:.3f}s; holding last pose',
                 throttle_duration_sec=1.0)
             self._hold_or_stand()
             return
         if self._needs_lin_vel:
             lin_age = now - self._last_lin_vel_mono
             if self._lin_vel is None:
+                source = (
+                    f'MUSE {self.cfg.base_state_topic}'
+                    if self.cfg.base_state_topic else
+                    (self.cfg.odom_topic or 'odom/base_state')
+                )
                 self.get_logger().warn(
-                    'waiting for lin_vel (odom/base_state); holding default pose',
+                    f'waiting for lin_vel from {source}; holding default_angles. '
+                    'Sim2Real: ros2 launch state_estimator state_estimator.launch.py',
                     throttle_duration_sec=2.0)
                 self._hold_or_stand()
                 return
@@ -261,6 +291,22 @@ class PolicyRunner(Node):
                     throttle_duration_sec=1.0)
                 self._hold_or_stand()
                 return
+        # Rough-Blind + MUSE: DLS waits for /base_state and joints, not IMU.
+        # MuJoCo / odom-only still needs a fresh IMU for gravity and ang_vel.
+        if not muse_ok and imu_age > self.cfg.imu_timeout_sec:
+            self.get_logger().warn(
+                f'stale IMU age={imu_age:.3f}s; holding last pose',
+                throttle_duration_sec=1.0)
+            self._hold_or_stand()
+            return
+        if muse_ok and quat_xyzw_is_valid(self._base_quat):
+            quat_xyzw = self._base_quat
+            ang_vel = self._base_ang_vel
+            orientation_valid = True
+        else:
+            quat_xyzw = self._quat
+            ang_vel = self._ang_vel
+            orientation_valid = self._orientation_valid
         cmd = self._cmd
         if (
             self.cfg.cmd_timeout_sec > 0.0
@@ -274,14 +320,14 @@ class PolicyRunner(Node):
             targets = self.controller.targets(SensorSample(
                 q=self._q,
                 dq=self._dq if self._dq is not None else np.zeros(self.cfg.num_actions),
-                quat_xyzw=self._quat,
-                ang_vel=self._ang_vel,
+                quat_xyzw=quat_xyzw,
+                ang_vel=ang_vel,
                 cmd_vx=float(cmd[0]),
                 cmd_vy=float(cmd[1]),
                 cmd_wz=float(cmd[2]),
                 lin_vel=None if not self._needs_lin_vel else self._lin_vel,
                 accel=self._accel,
-                orientation_valid=self._orientation_valid,
+                orientation_valid=orientation_valid,
                 time_sec=now,
             ))
         except (ValueError, RuntimeError) as exc:

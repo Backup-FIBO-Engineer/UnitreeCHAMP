@@ -1,5 +1,6 @@
-# RL deploy for a Go2 DLS Flat / Rough-Blind policy
-# (iit-DLSLab basic-locomotion-isaaclab, use_vision=False).
+# RL deploy for a Go2 DLS Rough-Blind policy
+# (iit-DLSLab basic-locomotion-isaaclab, Locomotion-Go2-Rough-Blind,
+#  use_imu=False, use_vision=False, use_concurrent_state_est=False).
 #
 # Joint names, default_angles, observation terms and action_scale MUST match
 # the env that produced the checkpoint. The runner has no robot id; this file
@@ -12,10 +13,11 @@
 #   FL_hip FR_hip RL_hip RR_hip | FL_thigh FR_thigh RL_thigh RR_thigh
 #   | FL_calf FR_calf RL_calf RR_calf
 # All observation scales are 1.0. Commands are raw [vx, vy, yaw_rate].
-# lin_vel is body-frame COM velocity (Isaac root_lin_vel_b). MuJoCo publishes
-# link-origin twist on odom/ground_truth; the runner adds ω × r_com.
-# On hardware, remap odom_topic to an estimator (or set base_state_topic for
-# DLS /base_state, whose linear velocity is world-frame and is rotated here).
+# lin_vel is body-frame COM velocity (Isaac root_lin_vel_b). Never put IMU
+# linear_acceleration in those three slots.
+# Sim2Sim MuJoCo: mujoco_sim publishes odom/ground_truth (body twist); the
+# runner adds ω × r_com. Sim2Real launch overrides odom_topic and uses MUSE
+# /base_state (world-frame linear vel, rotated here).
 /**:
   ros__parameters:
     policy_path: ""

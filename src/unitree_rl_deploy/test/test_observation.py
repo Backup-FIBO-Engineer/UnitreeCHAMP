@@ -229,3 +229,29 @@ def test_clip_obs():
 def test_unknown_term_rejected():
     with pytest.raises(ValueError, match='unknown observation'):
         _cfg(terms=['ang_vel', 'foo'])
+
+
+def test_dls_base_state_arrays_are_xyzw_and_xyz():
+    """MUSE / DLS Pose.orientation is float64[4] xyzw, Screw.linear is float64[3]."""
+    quat = as_quat_xyzw([0.0, 0.0, 0.0, 1.0])
+    linear = as_vector3([0.4, -0.1, 0.02])
+    np.testing.assert_allclose(quat, [0.0, 0.0, 0.0, 1.0])
+    np.testing.assert_allclose(linear, [0.4, -0.1, 0.02])
+    body = linear_velocity_in_body_frame(linear, 'world', quat)
+    np.testing.assert_allclose(body, linear, atol=1e-6)
+
+
+class _GeomQuat:
+    def __init__(self, x, y, z, w):
+        self.x, self.y, self.z, self.w = x, y, z, w
+
+
+class _GeomVec:
+    def __init__(self, x, y, z):
+        self.x, self.y, self.z = x, y, z
+
+
+def test_geometry_msgs_style_fields():
+    np.testing.assert_allclose(
+        as_quat_xyzw(_GeomQuat(0.0, 0.0, 0.0, 1.0)), [0.0, 0.0, 0.0, 1.0])
+    np.testing.assert_allclose(as_vector3(_GeomVec(1.0, 2.0, 3.0)), [1.0, 2.0, 3.0])

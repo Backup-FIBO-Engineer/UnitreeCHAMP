@@ -5,6 +5,8 @@
 #   cd ~/unitree_ros2/cyclonedds_ws && colcon build --packages-select unitree_go unitree_api
 # They are sourced from UNITREE_ROS2_DIR (default ~/unitree_ros2) when present;
 # otherwise the bridge is skipped with a CMake warning and the rest still builds.
+# MUSE (dls2_interface / /base_state) is a separate workspace; source it at
+# runtime via ./run_muse.sh and ./run_rl_sim2real.sh, not at compile time.
 
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 UNITREE_ROS2_DIR="${UNITREE_ROS2_DIR:-$HOME/unitree_ros2}"
