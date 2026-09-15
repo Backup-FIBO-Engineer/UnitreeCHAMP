@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='fibo',
     maintainer_email='fibo@todo.todo',
-    description='Xbox One S (1708) Bluetooth teleop: /cmd_vel and /body_pose',
+    description='Xbox One S (1708) Bluetooth teleop: /cmd_vel for unitree_rl_deploy',
     license='BSD',
     tests_require=['pytest'],
     entry_points={

@@ -1,0 +1,84 @@
+# RL deploy for a B2 DLS Flat / Rough-Blind policy
+# (iit-DLSLab basic-locomotion-isaaclab, use_vision=False).
+#
+# Same 260-D observation, hip-group joint order, default pose, action scale
+# and gait clock as Go2. Only PD, COM offset and this filename change.
+# lin_vel is body-frame COM velocity. On hardware pass odom_topic:=/odom or
+# base_state_topic:=/base_state.
+/**:
+  ros__parameters:
+    policy_path: ""
+    control_rate: 50.0
+    command_topic: joint_commands
+    joint_state_topic: joint_states
+    imu_topic: imu/data
+    cmd_vel_topic: cmd_vel
+    odom_topic: odom/ground_truth
+    base_state_topic: ""
+    lin_vel_frame: body
+    joint_names:
+      - FL_hip_joint
+      - FR_hip_joint
+      - RL_hip_joint
+      - RR_hip_joint
+      - FL_thigh_joint
+      - FR_thigh_joint
+      - RL_thigh_joint
+      - RR_thigh_joint
+      - FL_calf_joint
+      - FR_calf_joint
+      - RL_calf_joint
+      - RR_calf_joint
+    default_angles:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.9
+      - 0.9
+      - 0.9
+      - 0.9
+      - -1.8
+      - -1.8
+      - -1.8
+      - -1.8
+    action_scale: 0.5
+    hip_scale_reduction: 1.0
+    hip_indices: [0, 1, 2, 3]
+    clip_actions: 3.0
+    use_filter_actions: true
+    filter_alpha: 0.8
+    max_cmd: [0.8, 0.25, 0.5]
+    lin_vel_com_offset: [0.000458, 0.005261, 0.000665]
+    gait_phase_offsets: [0.0, 0.5, 0.5, 0.0]
+    gait_step_freq_min: 1.4
+    gait_step_freq_max: 1.8
+    gait_speed_min: 0.4
+    gait_speed_max: 0.8
+    gait_still_command_threshold: 0.01
+    imu_timeout_sec: 0.2
+    joint_timeout_sec: 0.2
+    cmd_timeout_sec: 0.5
+    lin_vel_timeout_sec: 0.2
+    # DLS walking / train PD.
+    kp: 100.0
+    kd: 5.0
+    observation:
+      clip: 100.0
+      history: 5
+      clock_size: 4
+      lin_vel_scale: 1.0
+      ang_vel_scale: 1.0
+      dof_pos_scale: 1.0
+      dof_vel_scale: 1.0
+      cmd_scale: [1.0, 1.0, 1.0]
+      clock_period: 0.8
+      terms:
+        - lin_vel
+        - ang_vel
+        - gravity
+        - command
+        - dof_pos
+        - dof_vel
+        - action
+        - clock

@@ -1,0 +1,282 @@
+{
+ "version": 1,
+ "sources": {
+  "package://unitree_rl_deploy/meshes/B2/base_link.dae": {
+   "sha1": "642ce3b7596d71a9fb04470ce6a502952d08c1bf",
+   "source": "meshes/B2/base_link.dae",
+   "parts": [
+    {
+     "name": "B2_base_link_0",
+     "file": "B2_base_link_0.obj",
+     "material": "磨砂铝合金_011-effect",
+     "rgba": [
+      0.74876,
+      0.74876,
+      0.74876,
+      1.0
+     ],
+     "triangles": 82432
+    },
+    {
+     "name": "B2_base_link_1",
+     "file": "B2_base_link_1.obj",
+     "material": "logo_001-effect",
+     "rgba": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "triangles": 1172
+    },
+    {
+     "name": "B2_base_link_2",
+     "file": "B2_base_link_2.obj",
+     "material": "材质_023-effect",
+     "rgba": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ],
+     "triangles": 1068
+    },
+    {
+     "name": "B2_base_link_3",
+     "file": "B2_base_link_3.obj",
+     "material": "材质_024-effect",
+     "rgba": [
+      0.002853,
+      0.002853,
+      0.002853,
+      1.0
+     ],
+     "triangles": 1568
+    }
+   ]
+  },
+  "package://unitree_rl_deploy/meshes/B2/FL_hip.dae": {
+   "sha1": "1ae47cd17b2b08aa15c3230c46306f15686070c1",
+   "source": "meshes/B2/FL_hip.dae",
+   "parts": [
+    {
+     "name": "B2_FL_hip_0",
+     "file": "B2_FL_hip_0.obj",
+     "material": "磨砂铝合金_008-effect",
+     "rgba": [
+      0.85,
+      0.85,
+      0.85,
+      1.0
+     ],
+     "triangles": 3008
+    }
+   ]
+  },
+  "package://unitree_rl_deploy/meshes/B2/FL_thigh.dae": {
+   "sha1": "6c63110bc8ca8d12e4f59e4b5ca7d306a86d690e",
+   "source": "meshes/B2/FL_thigh.dae",
+   "parts": [
+    {
+     "name": "B2_FL_thigh_0",
+     "file": "B2_FL_thigh_0.obj",
+     "material": "磨砂铝合金_008-effect",
+     "rgba": [
+      0.85,
+      0.85,
+      0.85,
+      1.0
+     ],
+     "triangles": 3750
+    },
+    {
+     "name": "B2_FL_thigh_1",
+     "file": "B2_FL_thigh_1.obj",
+     "material": "灰色硅胶_009-effect",
+     "rgba": [
+      0.6500053,
+      0.68,
+      0.6500053,
+      1.0
+     ],
+     "triangles": 5474
+    }
+   ]
+  },
+  "package://unitree_rl_deploy/meshes/B2/calf.dae": {
+   "sha1": "3de529d56a62a88895cc8d91aa6f1b3edbe7ab30",
+   "source": "meshes/B2/calf.dae",
+   "parts": [
+    {
+     "name": "B2_calf_0",
+     "file": "B2_calf_0.obj",
+     "material": "磨砂铝合金_018-effect",
+     "rgba": [
+      0.74876,
+      0.74876,
+      0.74876,
+      1.0
+     ],
+     "triangles": 5608
+    },
+    {
+     "name": "B2_calf_1",
+     "file": "B2_calf_1.obj",
+     "material": "材质_005-effect",
+     "rgba": [
+      0.0732355,
+      0.0732355,
+      0.0732355,
+      1.0
+     ],
+     "triangles": 21216
+    }
+   ]
+  },
+  "package://unitree_rl_deploy/meshes/B2/FR_hip.dae": {
+   "sha1": "666f292e09747a3ab0aaf660ec399ad36ffae565",
+   "source": "meshes/B2/FR_hip.dae",
+   "parts": [
+    {
+     "name": "B2_FR_hip_0",
+     "file": "B2_FR_hip_0.obj",
+     "material": "磨砂铝合金_008-effect",
+     "rgba": [
+      0.85,
+      0.85,
+      0.85,
+      1.0
+     ],
+     "triangles": 3004
+    }
+   ]
+  },
+  "package://unitree_rl_deploy/meshes/B2/FR_thigh.dae": {
+   "sha1": "3848b2aeb068bdeb6b1c3a3553b9aed57cb14163",
+   "source": "meshes/B2/FR_thigh.dae",
+   "parts": [
+    {
+     "name": "B2_FR_thigh_0",
+     "file": "B2_FR_thigh_0.obj",
+     "material": "磨砂铝合金_008-effect",
+     "rgba": [
+      0.85,
+      0.85,
+      0.85,
+      1.0
+     ],
+     "triangles": 3750
+    },
+    {
+     "name": "B2_FR_thigh_1",
+     "file": "B2_FR_thigh_1.obj",
+     "material": "灰色硅胶_009-effect",
+     "rgba": [
+      0.6500053,
+      0.68,
+      0.6500053,
+      1.0
+     ],
+     "triangles": 5472
+    }
+   ]
+  },
+  "package://unitree_rl_deploy/meshes/B2/RL_hip.dae": {
+   "sha1": "b5220dd630e04130e7109d1e0056738e7693d5bc",
+   "source": "meshes/B2/RL_hip.dae",
+   "parts": [
+    {
+     "name": "B2_RL_hip_0",
+     "file": "B2_RL_hip_0.obj",
+     "material": "磨砂铝合金_008-effect",
+     "rgba": [
+      0.85,
+      0.85,
+      0.85,
+      1.0
+     ],
+     "triangles": 2988
+    }
+   ]
+  },
+  "package://unitree_rl_deploy/meshes/B2/RL_thigh.dae": {
+   "sha1": "db8c566c3fe356b2cbd66bad1a4c1a4aa0be94dc",
+   "source": "meshes/B2/RL_thigh.dae",
+   "parts": [
+    {
+     "name": "B2_RL_thigh_0",
+     "file": "B2_RL_thigh_0.obj",
+     "material": "磨砂铝合金_008-effect",
+     "rgba": [
+      0.85,
+      0.85,
+      0.85,
+      1.0
+     ],
+     "triangles": 3750
+    },
+    {
+     "name": "B2_RL_thigh_1",
+     "file": "B2_RL_thigh_1.obj",
+     "material": "灰色硅胶_009-effect",
+     "rgba": [
+      0.6500053,
+      0.68,
+      0.6500053,
+      1.0
+     ],
+     "triangles": 5472
+    }
+   ]
+  },
+  "package://unitree_rl_deploy/meshes/B2/RR_hip.dae": {
+   "sha1": "aae87323ba2ff3141ed6aa62ce017087858263d0",
+   "source": "meshes/B2/RR_hip.dae",
+   "parts": [
+    {
+     "name": "B2_RR_hip_0",
+     "file": "B2_RR_hip_0.obj",
+     "material": "磨砂铝合金_008-effect",
+     "rgba": [
+      0.85,
+      0.85,
+      0.85,
+      1.0
+     ],
+     "triangles": 3004
+    }
+   ]
+  },
+  "package://unitree_rl_deploy/meshes/B2/RR_thigh.dae": {
+   "sha1": "7850eafb145c01bedfc977661da765a64d6f0989",
+   "source": "meshes/B2/RR_thigh.dae",
+   "parts": [
+    {
+     "name": "B2_RR_thigh_0",
+     "file": "B2_RR_thigh_0.obj",
+     "material": "磨砂铝合金_008-effect",
+     "rgba": [
+      0.85,
+      0.85,
+      0.85,
+      1.0
+     ],
+     "triangles": 3750
+    },
+    {
+     "name": "B2_RR_thigh_1",
+     "file": "B2_RR_thigh_1.obj",
+     "material": "灰色硅胶_009-effect",
+     "rgba": [
+      0.6500053,
+      0.68,
+      0.6500053,
+      1.0
+     ],
+     "triangles": 5471
+    }
+   ]
+  }
+ },
+ "robot": "b2"
+}

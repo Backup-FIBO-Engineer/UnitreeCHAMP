@@ -1,9 +1,9 @@
 # Xbox One S Model 1708 (Bluetooth) teleop
 
-ROS 2 Humble package (`xbox_one_s_teleop`) for this CHAMP workspace: one pad
-for `/cmd_vel` and `/body_pose`. Pair with `joy_node` (`ros-humble-joy`). Stick
-indices are `config/xbox_one_s_1708_bt.yaml` (SDL2). Speed and body-angle
-limits come from the CHAMP robot yaml when you pass `robot:=go2|b2|xgo`.
+ROS 2 Humble package (`xbox_one_s_teleop`) for this workspace: `/cmd_vel` for
+`unitree_rl_deploy`. Pair with `joy_node` (`ros-humble-joy`). Stick indices
+are `config/xbox_one_s_1708_bt.yaml` (SDL2). Speed limits come from
+`config/<robot>_rl.yaml` `max_cmd` when you pass `robot:=go2|b2`.
 
 Do **not** run `./run_teleop.sh` / `teleop_twist_keyboard` at the same time
 (both publish `/cmd_vel`).
@@ -94,7 +94,7 @@ source /opt/ros/humble/setup.bash
 source install/setup.bash
 colcon build --packages-select xbox_one_s_teleop
 source install/setup.bash
-./run_xbox_teleop.sh go2          # or b2 / xgo
+./run_xbox_teleop.sh go2          # or b2
 # same as: ros2 launch xbox_one_s_teleop teleop.launch.py robot:=go2
 ```
 
@@ -110,7 +110,7 @@ ros2 run joy joy_enumerate_devices
 After xpadneo, SDL lists the 1708 as **Xbox 360 Controller**. `driver:=auto`
 (the default) then loads the Linux axis map (right stick = axes 3/4) and the
 stick signs for that path: up = forward, right-stick left = turn left.
-Hold **RB** to walk. Body-pose: stick up = nose up, stick right = roll right.
+Hold **RB** to walk.
 
 ```bash
 ./run_xbox_teleop.sh b2
@@ -132,51 +132,18 @@ launch with `driver:=linux`:
 
 | Control | Action |
 |---|---|
-| **LB** | toggle **locomotion** ↔ **body pose** |
-| **RB** (**hold**) | locomotion: enable `/cmd_vel` (**release = stop**) |
-| **A** | `/body_pose` identity — body level, same as `{orientation: {w: 1.0}}` |
+| **RB** (**hold**) | enable `/cmd_vel` (**release = stop**) |
 | **B** | zero `/cmd_vel` now |
-| Left stick X + Y | locomotion: **vy** and **vx** together |
-| Right stick X | locomotion: **yaw**; body-pose: **roll** |
-| Right stick Y | body-pose: **pitch** (up = nose up) |
+| Left stick X + Y | **vy** and **vx** together |
+| Right stick X | **yaw** |
 
-Mode is published on `/xbox_teleop/mode` (`locomotion` or `body_pose`).
+Natural stick signs (ROS `+y` = left, `+yaw` = CCW):
 
-Natural stick signs (ROS `+y` = left, `+yaw` = CCW, `+pitch` = nose **down**):
-
-- stick up → walk forward / nose up
-- stick right → strafe right / turn right / roll right-side-down
-
-### Locomotion (default)
+- stick up → walk forward
+- stick right → strafe right / turn right
 
 Hold **RB**, then left stick walks (forward/back **and** lateral at once) while
 right stick X yaws. Releasing RB publishes zero Twist.
-
-### Body pose
-
-Press **LB** once. `/cmd_vel` is held at zero. Right stick X/Y are **rates**,
-not a one-shot pose: full stick ≈ that robot's `body_pose.desired_rate` rad/s
-(Go2 0.5 rad/s). Releasing the stick **holds** the last roll/pitch so you can
-press **LB** again and walk while tilted.
-
-The CLI example that pitches the body nose-up by 0.10 rad:
-
-```bash
-ros2 topic pub --once /body_pose geometry_msgs/msg/Pose \
-  "{orientation: {y: -0.04998, w: 0.99875}}"
-```
-
-is the same quaternion as RPY `(0, -0.10, 0)`. On the pad: body-pose mode,
-hold the right stick **up** for about `0.10 / desired_rate` seconds (Go2 ≈ 0.2 s),
-then release. Limits are `max_roll` / `max_pitch` in
-`config/<robot>_body_pose.yaml` (Go2 0.25 / 0.20 rad).
-
-**A** publishes identity, same as:
-
-```bash
-ros2 topic pub --once /body_pose geometry_msgs/msg/Pose \
-  "{orientation: {w: 1.0}}"
-```
 
 ## If the robot does not walk
 
@@ -184,16 +151,13 @@ ros2 topic pub --once /body_pose geometry_msgs/msg/Pose \
    (or anything that is not Xbox), it is the wrong SDL device. Run
    `ros2 run joy joy_enumerate_devices` and pass that Xbox `device_id:=`.
 2. Hold **RB** (dead-man). Sticks do nothing without it.
-3. Check `/xbox_teleop/mode` is `locomotion` (press LB if you are in body pose).
-4. `ros2 topic echo /cmd_vel` while holding RB and pushing the left stick **forward**.
-   CHAMP `+vx` is walk forward. The node logs `invert_vx` at startup and `/cmd_vel`
-   once a second while walking. `quadruped_controller_node` republishes the
-   slewed command as `/cmd_vel/applied`.
-5. If that echo is **negative** while the stick is forward, the mapping yaml
+3. `ros2 topic echo /cmd_vel` while holding RB and pushing the left stick **forward**.
+   `+vx` is walk forward. The node logs `invert_vx` at startup and `/cmd_vel`
+   once a second while walking.
+4. If that echo is **negative** while the stick is forward, the mapping yaml
    sign does not match this `joy_node` path. Do not edit the yaml first — overlay:
    `./run_xbox_teleop.sh b2 invert_vx:=true` (or `invert_vx:=false` if the yaml
    already inverts). Same for `invert_vy` / `invert_yaw`.
-6. If `/cmd_vel` is already **positive** and the robot still only walks backward,
-   that is gait/contact (stubbing, phase reset), not the stick sign. Keep this
-   teleop overlay off and use the gait continuity fixes.
-7. `ros2 topic echo /joy` — if right stick is axes 3/4, use `driver:=linux`.
+5. If `/cmd_vel` is already **positive** and the robot still only walks backward,
+   the policy observation or `default_angles` likely do not match training.
+6. `ros2 topic echo /joy` — if right stick is axes 3/4, use `driver:=linux`.

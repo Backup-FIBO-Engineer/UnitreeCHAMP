@@ -1,0 +1,21 @@
+# MuJoCo settings for Go2. Geometry, inertials, joint limits, efforts and
+# velocity limits live in urdf/go2.urdf and mujoco/go2.xml; this file only
+# holds simulator tuning.
+/**:
+  ros__parameters:
+    sim:
+      # Documented to match mujoco/go2.xml (DLS walking PD). The XML is the
+      # source of truth at runtime.
+      actuator_kp_hip: 20.0
+      actuator_kp_leg: 20.0
+      actuator_kv: 2.0
+      # Passive joint model applied to every hinge.
+      joint_damping: 0.5
+      joint_armature: 0.01
+      joint_frictionloss: 0.05
+      # Sliding, torsional, rolling friction of every collision geom.
+      geom_friction: [1.2, 0.005, 0.0001]
+      # Extra height above (nominal_height + foot radius) at which the body spawns.
+      spawn_clearance: 0.02
+      # <= 0: rate-limit joint targets with the URDF <limit velocity> of each joint.
+      max_joint_velocity: 0.0

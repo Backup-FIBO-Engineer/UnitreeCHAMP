@@ -1,0 +1,25 @@
+# unitree_ros2_bridge parameters for Go2. Joint names, joint limits and the
+# base/IMU frames come from urdf/go2.urdf + go2_joints.yaml + go2_links.yaml,
+# which the launch passes alongside this file.
+/**:
+  ros__parameters:
+    # unitree_ros2 topics of the robot (ROS 2 /lowcmd == DDS rt/lowcmd).
+    lowcmd_topic: /lowcmd
+    lowstate_topic: /lowstate
+    # Policy runner topics.
+    command_topic: joint_commands
+    joint_state_topic: joint_states
+    imu_topic: imu/data
+    publish_rate: 500.0
+    # unitree_ros2 example/src/src/go2/go2_stand_example.cpp: Kp 60, Kd 5, mode 0x01.
+    kp: 60.0
+    kd: 5.0
+    tau: 0.0
+    motor_mode: 1  # 0x01 PMSM servo
+    command_timeout_sec: 0.5
+    ramp_sec: 2.0
+    # Policy targets arrive at control_rate (50 Hz); interpolate at publish_rate
+    # instead of repeating each one (no 20 ms staircase at the joint PD).
+    interpolate_commands: true
+    # motion_switcher ReleaseMode over /api/motion_switcher/{request,response}.
+    release_sport: true

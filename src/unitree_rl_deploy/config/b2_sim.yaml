@@ -1,0 +1,18 @@
+# MuJoCo settings for B2. Geometry, inertials, joint limits, efforts and
+# velocity limits live in urdf/b2.urdf and mujoco/b2.xml; this file only
+# holds simulator tuning.
+/**:
+  ros__parameters:
+    sim:
+      # Documented to match mujoco/b2.xml (DLS walking / train PD). The XML is
+      # the source of truth at runtime.
+      actuator_kp_hip: 100.0
+      actuator_kp_leg: 100.0
+      actuator_kv: 5.0
+      joint_damping: 0.5
+      joint_armature: 0.01
+      joint_frictionloss: 0.05
+      geom_friction: [1.2, 0.005, 0.0001]
+      spawn_clearance: 0.02
+      # <= 0: rate-limit joint targets with the URDF <limit velocity> of each joint.
+      max_joint_velocity: 0.0
